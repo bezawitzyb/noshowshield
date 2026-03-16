@@ -21,6 +21,10 @@ def group_countries(
     data:pd.DataFrame,
     limit:int
     )-> pd.DataFrame:
+    """
+    This function takes in a dataframe and group countries with less then 'limit' entries in Other category
+    The function adds a new column called 'country_group' and leaves the 'country' column as-is
+    """
 
     country_counts = data['country'].value_counts()
     countries_included = country_counts[country_counts >= limit].index
