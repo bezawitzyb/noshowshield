@@ -14,4 +14,18 @@ Usage:
     X_test_transformed = preprocessor.transform(X_test)
 """
 
+import pandas as pd
+import numpy as np
 
+def group_countries(
+    data:pd.DataFrame,
+    limit:int
+    )-> pd.DataFrame:
+
+    country_counts = data['country'].value_counts()
+    countries_included = country_counts[country_counts >= limit].index
+
+    data['country_group'] = data['country'].apply(
+        lambda x: x if x in countries_included else 'Other'
+    )
+    return data
