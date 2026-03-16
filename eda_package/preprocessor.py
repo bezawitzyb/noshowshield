@@ -14,6 +14,24 @@ Usage:
     X_test_transformed = preprocessor.transform(X_test)
 """
 import pandas as pd
+import numpy as np
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import RobustScaler, FunctionTransformer
+
+def group_countries(
+    data:pd.DataFrame,
+    limit:int
+    )-> pd.DataFrame:
+
+    country_counts = data['country'].value_counts()
+    countries_included = country_counts[country_counts >= limit].index
+
+    data['country_group'] = data['country'].apply(
+        lambda x: x if x in countries_included else 'Other'
+    )
+    return data
 
 def engineer_numerical_features(X: pd.DataFrame) -> pd.DataFrame:
     """
@@ -49,12 +67,11 @@ def engineer_numerical_features(X: pd.DataFrame) -> pd.DataFrame:
 
     # company ID -> binary flag
     if "company" in X.columns:
-        X["company_booking"] = X["company"].notna().astype(int)
-        X = X.drop(columns="company")
+        X["company_booking"] = (X["company"] != 0).astype(int)
 
     # agent ID -> binary flag
     if "agent" in X.columns:
-        X["has_agent"] = X["agent"].notna().astype(int)
+        X["has_agent"] = (X["agent"] != 0).astype(int)
         X = X.drop(columns="agent")
 
     # parking spaces -> simpler yes/no feature
@@ -62,60 +79,60 @@ def engineer_numerical_features(X: pd.DataFrame) -> pd.DataFrame:
         X["has_parking"] = (X["required_car_parking_spaces"] > 0).astype(int)
         X = X.drop(columns="required_car_parking_spaces")
 
-    # children / babies flags
-    if "children" in X.columns:
-        X["has_children"] = (X["children"].fillna(0) > 0).astype(int)
-
-    if "babies" in X.columns:
-        X["has_babies"] = (X["babies"].fillna(0) > 0).astype(int)
-
-    # family booking flag
-    if {"children", "babies"}.issubset(X.columns):
-        X["is_family"] = (X[["children", "babies"]].fillna(0).sum(axis=1) > 0).astype(int)
-
-    # total stay length
-    if {"stays_in_weekend_nights", "stays_in_week_nights"}.issubset(X.columns):
-        X["total_stay"] = (
-            X["stays_in_weekend_nights"] + X["stays_in_week_nights"]
-        )
-
-    # total guests
-    if {"adults", "children", "babies"}.issubset(X.columns):
-        X["total_guests"] = (X["adults"] + X["children"].fillna(0) + X["babies"].fillna(0))
-
     return X
 
-# # turn this into a function , then another function to do both
-# numeric_pipeline = Pipeline([
-#     ("imputer", SimpleImputer(strategy="median")),
-#     ("scaler", RobustScaler())
-# ])
+def build_numerical_preprocessor(numeric_features, binary_features):
+    """
+    Create a ColumnTransformer that preprocesses numerical features.
 
-# binary_pipeline = Pipeline([
-#     ("imputer", SimpleImputer(strategy="most_frequent"))
-# ])
+    Parameters
+    ----------
+    numeric_features : list
+        Columns that should be scaled.
 
-# column_preprocessor = ColumnTransformer([
-#     ("num", numeric_pipeline, numeric_features),
-#     ("bin", binary_pipeline, binary_features),
-# ])
+    binary_features : list
+        Binary indicator columns (0/1) that should only be imputed.
 
-# preproc_pipeline = Pipeline([
-#     ("feature_engineering", FunctionTransformer(engineer_hotel_features, validate=False)),
-#     ("preprocessing", column_preprocessor)
-# ])
-import pandas as pd
-import numpy as np
+    Returns
+    -------
+    ColumnTransformer
+        Preprocessing transformer for numerical columns.
+    """
 
-def group_countries(
-    data:pd.DataFrame,
-    limit:int
-    )-> pd.DataFrame:
+    # Continuous numerical features
+    numeric_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),  # fill missing values robustly
+        ("scaler", RobustScaler())  # scale while being robust to outliers
+    ])
 
-    country_counts = data['country'].value_counts()
-    countries_included = country_counts[country_counts >= limit].index
+    # Binary features
+    binary_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent"))
+        # no scaling because 0/1 values are already normalized
+    ])
 
-    data['country_group'] = data['country'].apply(
-        lambda x: x if x in countries_included else 'Other'
+    column_preprocessor = ColumnTransformer([
+        ("num", numeric_pipeline, numeric_features),
+        ("bin", binary_pipeline, binary_features),
+    ])
+
+    return column_preprocessor
+
+def build_preprocessing_pipeline(numeric_features, binary_features):
+    """
+    Build the full preprocessing pipeline including
+    feature engineering and numerical preprocessing.
+    """
+
+    column_preprocessor = build_numerical_preprocessor(
+        numeric_features,
+        binary_features
     )
-    return data
+
+    preproc_pipeline = Pipeline([
+        ("feature_engineering",
+         FunctionTransformer(engineer_numerical_features, validate=False)),
+        ("preprocessing", column_preprocessor)
+    ])
+
+    return preproc_pipeline
