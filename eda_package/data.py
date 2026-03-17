@@ -53,6 +53,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df['country'] = df['country'].fillna('Other')
 
     #Are there other data types that need to be changed or rows to be dropped?
+    #Consider dropping some of the columns?
 
     return df
 
@@ -66,4 +67,6 @@ def temporal_split(df: pd.DataFrame)-> pd.DataFrame:
     Returns:
         train, test
     """
+
+
     pass

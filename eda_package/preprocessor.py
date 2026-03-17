@@ -32,4 +32,7 @@ def group_countries(
     data['country_group'] = data['country'].apply(
         lambda x: x if x in countries_included else 'Other'
     )
+
+    #data = data.drop(columns='country')
+
     return data
