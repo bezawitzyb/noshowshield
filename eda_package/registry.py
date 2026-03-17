@@ -7,7 +7,7 @@ ORDINAL_FEATURES_MAP = {
         "Undefined", "SC", "BB", "HB", "FB"
     ]
 }
-LEAKY_COLS = {["is_canceled", "reservation_status", "reservation_status_date"]}
+LEAKY_COLS = ["is_canceled", "reservation_status", "reservation_status_date"]
 COLS_TO_DROP ={
     "multicollinearity": ["stays_in_weekend_nights", "stays_in_week_nights", "total_previous_bookings", "total_revenue", "is_last_minute"]
 }
