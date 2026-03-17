@@ -1,41 +1,92 @@
-# TODO: Import your package, replace this by explicit imports of what you need
-#from packagename.main import predict
-
-
-
+import pandas as pd
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from eda_package.main import pred
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# Endpoint for https://your-domain.com/
+
 @app.get("/")
 def root():
     return {
-        'message': "Hi, The API is running!"
+        "message": "NoShowShield API is running!"
     }
 
-# Endpoint for https://your-domain.com/predict?input_one=154&input_two=199
+
 @app.get("/predict")
-def get_predict(input_one: float,
-            input_two: float):
-    # TODO: Do something with your input
-    # i.e. feed it to your model.predict, and return the output
-    # For a dummy version, just return the sum of the two inputs and the original inputs
-    prediction = float(input_one) + float(input_two)
-    return {
-        'prediction': prediction,
-        'inputs': {
-            'input_one': input_one,
-            'input_two': input_two
-        }
-    }
+def predict(
+    hotel: str,
+    lead_time: int,
+    arrival_date_year: int,
+    arrival_date_month: str,
+    arrival_date_week_number: int,
+    arrival_date_day_of_month: int,
+    stays_in_weekend_nights: int,
+    stays_in_week_nights: int,
+    adults: int,
+    children: float,
+    babies: int,
+    meal: str,
+    country: str,
+    market_segment: str,
+    distribution_channel: str,
+    is_repeated_guest: int,
+    previous_cancellations: int,
+    previous_bookings_not_canceled: int,
+    reserved_room_type: str,
+    assigned_room_type: str,
+    booking_changes: int,
+    deposit_type: str,
+    agent: float,
+    company: float,
+    days_in_waiting_list: int,
+    customer_type: str,
+    adr: float,
+    required_car_parking_spaces: int,
+    total_of_special_requests: int
+):
+    X_pred = pd.DataFrame([{
+        "hotel": hotel,
+        "lead_time": lead_time,
+        "arrival_date_year": arrival_date_year,
+        "arrival_date_month": arrival_date_month,
+        "arrival_date_week_number": arrival_date_week_number,
+        "arrival_date_day_of_month": arrival_date_day_of_month,
+        "stays_in_weekend_nights": stays_in_weekend_nights,
+        "stays_in_week_nights": stays_in_week_nights,
+        "adults": adults,
+        "children": children,
+        "babies": babies,
+        "meal": meal,
+        "country": country,
+        "market_segment": market_segment,
+        "distribution_channel": distribution_channel,
+        "is_repeated_guest": is_repeated_guest,
+        "previous_cancellations": previous_cancellations,
+        "previous_bookings_not_canceled": previous_bookings_not_canceled,
+        "reserved_room_type": reserved_room_type,
+        "assigned_room_type": assigned_room_type,
+        "booking_changes": booking_changes,
+        "deposit_type": deposit_type,
+        "agent": agent,
+        "company": company,
+        "days_in_waiting_list": days_in_waiting_list,
+        "customer_type": customer_type,
+        "adr": adr,
+        "required_car_parking_spaces": required_car_parking_spaces,
+        "total_of_special_requests": total_of_special_requests
+    }])
+
+    result = pred(X_pred)
+
+    return result
