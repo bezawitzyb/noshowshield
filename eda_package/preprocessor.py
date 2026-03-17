@@ -18,7 +18,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import RobustScaler, OneHotEncoder, OrdinalEncoder
-from registry import *
+from .registry import *
 
 def group_countries(
     df:pd.DataFrame,

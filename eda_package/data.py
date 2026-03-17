@@ -18,7 +18,7 @@ import pandas as pd
 import numpy as np
 import datetime
 from typing import Tuple
-from registry import *
+from .registry import *
 
 def load_raw_data(path: str = None) -> pd.DataFrame:
     """
