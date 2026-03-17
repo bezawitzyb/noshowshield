@@ -53,6 +53,8 @@ def the_brain():
     # 6. Transform
     X_train_processed = fit_transform_preprocessor(X_train, preprocessor)
     X_test_processed = transform_preprocessor(X_test, preprocessor)
+
+
     model = LogisticRegression()
     model.fit(X_train_processed, y_train)
     y_predicted = model.predict(X_test_processed)
