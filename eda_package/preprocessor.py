@@ -161,34 +161,3 @@ def transform_preprocessor(X_test: pd.DataFrame, preprocessor):
     )
 
     return X_test_processed
-    return preproc_pipeline
-
-#df = engineer_numerical_features(df)
-#numeric_features, binary_features = get_feature_lists(df)
-#preproc_pipeline = build_preprocessing_pipeline(
-   # numeric_features=numeric_features,
-   # binary_features=binary_features)
-
-
-#define a function that takes the dataframe df and outputs a fully preprocessed dataframe ready for modeling. This function should call the previous functions in the correct order.
-def preprocess_data(df: pd.DataFrame, ordinal_feature_map: dict, country_limit: int) -> pd.DataFrame:
-    df = df.copy()
-
-    #Group countries with less than 'country_limit' entries into 'Other'
-    df = group_countries(df, country_limit)
-
-    #Get feature lists
-    feature_lists = get_feature_lists(df, ordinal_feature_map)
-
-    #Create preprocessor
-    preprocessor = create_preprocessor(feature_lists, ordinal_feature_map)
-
-    #Fit and transform the preprocessor on the entire dataframe (since this function is meant for preprocessing before modeling, we assume this is the training data)
-    df_processed = fit_transform_preprocessor(df, preprocessor)
-
-    return df_processed
-
-
-
-def preproc_test():
-    print("Hello from preprocessor!")
