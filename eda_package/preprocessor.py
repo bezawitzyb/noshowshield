@@ -40,7 +40,7 @@ def group_countries(
 
     return df
 
-def engineer_numerical_features(X: pd.DataFrame) -> pd.DataFrame:
+def engineer_features(X: pd.DataFrame) -> pd.DataFrame:
     """
     Create engineered features from the raw hotel booking dataset:
     - removes the target if it is present
@@ -61,7 +61,7 @@ def engineer_numerical_features(X: pd.DataFrame) -> pd.DataFrame:
 
     # company ID -> binary flag
     if "company" in X.columns:
-        X["company_booking"] = (X["company"] != 0).astype(int)
+        X["has_company"] = (X["company"] != 0).astype(int)
         X = X.drop(columns="company")
 
     # agent ID -> binary flag
@@ -100,45 +100,27 @@ def get_feature_lists(df: pd.DataFrame):
 
     return numeric_features, binary_features
 
-def build_numerical_preprocessor(numeric_features, binary_features):
-    """
-    Build a ColumnTransformer for numerical preprocessing:
-    numeric_features : Continuous or count-based numerical columns to impute and scale
-    binary_features : Binary 0/1 columns to impute only
-    """
-    # Continuous / count numerical features:
+def create_preprocessing_pipeline(X: pd.DataFrame):
+    X = engineer_features(X)
+    numerical_features, binary_features = get_feature_lists(X)
+
     numeric_pipeline = Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", RobustScaler())
     ])
 
-    # Binary features:
     binary_pipeline = Pipeline([
         ("imputer", SimpleImputer(strategy="most_frequent"))
     ])
 
-    preprocessor = ColumnTransformer([
-        ("num", numeric_pipeline, numeric_features),
+    column_preprocessor = ColumnTransformer([
+        ("num", numeric_pipeline, numerical_features),
         ("bin", binary_pipeline, binary_features)
     ])
 
-    return preprocessor
-
-def build_preprocessing_pipeline(numeric_features, binary_features):
-    """
-    Build the full preprocessing pipeline:
-    feature engineering -> numerical preprocessing
-    """
-
-    numerical_preprocessor = build_numerical_preprocessor(
-        numeric_features=numeric_features,
-        binary_features=binary_features
-    )
-
     preproc_pipeline = Pipeline([
-        ("feature_engineering",
-         FunctionTransformer(engineer_numerical_features, validate=False)),
-        ("preprocessing", numerical_preprocessor)
+        ("feature_engineering", FunctionTransformer(engineer_features, validate=False)),
+        ("preprocessing", column_preprocessor)
     ])
 
     return preproc_pipeline
