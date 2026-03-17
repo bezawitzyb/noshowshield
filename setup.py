@@ -15,9 +15,10 @@ if os.path.isfile('requirements_dev.txt'):
     requirements.extend([x.strip() for x in content if 'git+' not in x])
 
 
-setup(name='packagename',
+setup(name='eda_package',
       version="0.0.1",
-      description="Project Description",
+      description="EDA package classes and functions",
+#      packages=['eda_package'],
       packages=find_packages(),
       install_requires=requirements,
       test_suite='tests',
