@@ -16,6 +16,8 @@ Usage:
 
 import pandas as pd
 import numpy as np
+import datetime
+from typing import Tuple
 
 def load_raw_data(path: str = None) -> pd.DataFrame:
     """
@@ -57,16 +59,24 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def temporal_split(df: pd.DataFrame)-> pd.DataFrame:
+def temporal_split(df: pd.DataFrame, arrival_date: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Split data temporally:
 
     This prevents data leakage from future bookings into the training set.
     Default: train on 2015–2016, test on 2017.
 
+    Input parameters:
+        - df: dataframe with data
+        - arrival_date: string with split date in the format 'YYYY-MM-DD'
+
     Returns:
         train, test
     """
 
+    split_datetime = pd.to_datetime(arrival_date)
+    year = split_datetime.year
+    month = split_datetime.month
+    day = split_datetime.day
 
     pass

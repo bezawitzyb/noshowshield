@@ -21,7 +21,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import RobustScaler, FunctionTransformer
 
 def group_countries(
-    data:pd.DataFrame,
+    df:pd.DataFrame,
     limit:int
     )-> pd.DataFrame:
     """
@@ -29,16 +29,16 @@ def group_countries(
     The function adds a new column called 'country_group' and leaves the 'country' column as-is
     """
 
-    country_counts = data['country'].value_counts()
+    country_counts = df['country'].value_counts()
     countries_included = country_counts[country_counts >= limit].index
 
-    data['country_group'] = data['country'].apply(
+    df['country_group'] = df['country'].apply(
         lambda x: x if x in countries_included else 'Other'
     )
 
-    #data = data.drop(columns='country')
+    #df = df.drop(columns=['country'])
 
-    return data
+    return df
 
 def engineer_numerical_features(X: pd.DataFrame) -> pd.DataFrame:
     """
@@ -148,3 +148,10 @@ def build_preprocessing_pipeline(numeric_features, binary_features):
 #preproc_pipeline = build_preprocessing_pipeline(
    # numeric_features=numeric_features,
    # binary_features=binary_features)
+
+
+
+
+
+def preproc_test():
+    print("Hello from preprocessor!")
