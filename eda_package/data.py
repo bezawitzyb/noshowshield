@@ -59,7 +59,8 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def temporal_split_v2(df: pd.DataFrame, arrival_year: int, arrival_month: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def temporal_split(df: pd.DataFrame, arrival_date: str = "2017-01-01") -> Tuple[pd.DataFrame, pd.DataFrame]:
+
     """
     Split data temporally:
 
@@ -74,6 +75,22 @@ def temporal_split_v2(df: pd.DataFrame, arrival_year: int, arrival_month: int) -
         train, test
     """
 
+    split_date = pd.to_datetime(arrival_date) #'YYYY-MM-DD'
+
+    if "arrival_date" not in df.columns:
+        df = df.copy()
+        df["arrival_date"] = pd.to_datetime(
+            df["arrival_date_year"].astype(str) + "-" +
+            df["arrival_date_month"] + "-" +
+            df["arrival_date_day_of_month"].astype(str)
+        )
+
+    train = df[df["arrival_date"] < split_date].copy()
+    test = df[df["arrival_date"] >= split_date].copy()
+
+    return train, test
+
+def temporal_split_v2(df: pd.DataFrame, arrival_year: int, arrival_month: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
     data = df.copy()
 
     data['month_num'] = pd.to_datetime(data.arrival_date_month, format='%B').dt.month
@@ -85,3 +102,22 @@ def temporal_split_v2(df: pd.DataFrame, arrival_year: int, arrival_month: int) -
     test_set = data[~mask]
 
     return training_set, test_set
+
+def split_X_y(df: pd.DataFrame):
+    """
+    Separate features (X) and target (y) from a dataframe.
+
+    Drops leaky columns: is_canceled, reservation_status, reservation_status_date.
+
+    Input parameters:
+        - df: dataframe with data
+
+    Returns:
+        X, y
+    """
+    drop_cols = ["is_canceled", "reservation_status", "reservation_status_date"]
+
+    X = df.drop(columns=drop_cols)
+    y = df["is_canceled"]
+
+    return X, y
