@@ -14,11 +14,10 @@ Usage:
     X_test_transformed = preprocessor.transform(X_test)
 """
 import pandas as pd
-import numpy as np
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import RobustScaler, FunctionTransformer
+from sklearn.preprocessing import RobustScaler, OneHotEncoder, OrdinalEncoder
 
 def group_countries(
     df:pd.DataFrame,
@@ -28,6 +27,7 @@ def group_countries(
     This function takes in a dataframe and group countries with less then 'limit' entries in Other category
     The function adds a new column called 'country_group' and leaves the 'country' column as-is
     """
+    df = df.copy()
 
     country_counts = df['country'].value_counts()
     countries_included = country_counts[country_counts >= limit].index
@@ -36,73 +36,69 @@ def group_countries(
         lambda x: x if x in countries_included else 'Other'
     )
 
+    #df = df.drop(columns='country')
     #df = df.drop(columns=['country'])
 
     return df
 
-def engineer_features(X: pd.DataFrame) -> pd.DataFrame:
-    """
-    Create engineered features from the raw hotel booking dataset:
-    - removes the target if it is present
-    - removes known leakage columns
-    - converts ID-like columns into binary indicators
-    """
+def get_feature_lists(X: pd.DataFrame, ordinal_feature_map: dict):
     X = X.copy()
 
-    # Drop target if it is accidentally included
-    if "is_canceled" in X.columns:
-        X = X.drop(columns="is_canceled")
+    # --- categorical ---
+    categorical_features = X.select_dtypes(
+        include=["object", "category", "bool"]
+    ).columns.tolist()
 
-    # Drop leakage columns: these contain future information
-    leakage_cols = ["reservation_status", "reservation_status_date"]
-    cols_to_drop = [col for col in leakage_cols if col in X.columns]
-    if cols_to_drop:
-        X = X.drop(columns=cols_to_drop)
+    # --- numeric ---
+    numeric_candidates = X.select_dtypes(include=["number"]).columns.tolist()
 
-    # company ID -> binary flag
-    if "company" in X.columns:
-        X["has_company"] = (X["company"] != 0).astype(int)
-        X = X.drop(columns="company")
-
-    # agent ID -> binary flag
-    if "agent" in X.columns:
-        X["has_agent"] = (X["agent"] != 0).astype(int)
-        X = X.drop(columns="agent")
-
-    # parking spaces -> simpler yes/no feature
-    if "required_car_parking_spaces" in X.columns:
-        X["has_parking"] = (X["required_car_parking_spaces"] > 0).astype(int)
-        X = X.drop(columns="required_car_parking_spaces")
-
-    return X
-
-def get_feature_lists(df: pd.DataFrame):
-    """
-    Automatically determine numeric and binary feature lists
-    based on dataframe dtypes and values
-    """
-    # Get all numeric columns
-    numeric_cols = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
-
-    # Identify binary columns
     binary_features = []
-    for col in numeric_cols:
-        unique_vals = set(df[col].dropna().unique())
+    numerical_features = []
 
-        # Check if column only contains 0 and 1
-        if unique_vals.issubset({0, 1}):
+    for col in numeric_candidates:
+        unique_vals = set(X[col].dropna().unique())
+
+        if unique_vals.issubset({0, 1}) and len(unique_vals) <= 2:
             binary_features.append(col)
+        else:
+            numerical_features.append(col)
 
-    # Remaining numeric = true numeric
-    numeric_features = [
-        col for col in numeric_cols if col not in binary_features
+    # --- split categorical ---
+    ordinal_features = [
+        col for col in categorical_features if col in ordinal_feature_map
     ]
 
-    return numeric_features, binary_features
+    onehot_features = [
+        col for col in categorical_features if col not in ordinal_feature_map
+    ]
 
-def create_preprocessing_pipeline(X: pd.DataFrame):
-    X = engineer_features(X)
-    numerical_features, binary_features = get_feature_lists(X)
+    return {
+        "numerical_features": numerical_features,
+        "binary_features": binary_features,
+        "onehot_features": onehot_features,
+        "ordinal_features": ordinal_features
+    }
+
+def create_preprocessor(feature_lists: dict, ordinal_features_map: dict) -> ColumnTransformer:
+    """
+    Create an unfitted ColumnTransformer preprocessor.
+
+    Parameters
+    ----------
+    feature_lists : dict
+        Output of get_feature_lists(), containing:
+        - numerical_features
+        - binary_features
+        - onehot_features
+        - ordinal_features
+
+    ordinal_features_map : dict
+        Mapping of ordinal feature name -> ordered categories
+    """
+    numerical_features = feature_lists["numerical_features"]
+    binary_features = feature_lists["binary_features"]
+    onehot_features = feature_lists["onehot_features"]
+    ordinal_features = feature_lists["ordinal_features"]
 
     numeric_pipeline = Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
@@ -113,16 +109,57 @@ def create_preprocessing_pipeline(X: pd.DataFrame):
         ("imputer", SimpleImputer(strategy="most_frequent"))
     ])
 
-    column_preprocessor = ColumnTransformer([
+    onehot_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+    ])
+
+    transformers = [
         ("num", numeric_pipeline, numerical_features),
-        ("bin", binary_pipeline, binary_features)
-    ])
+        ("bin", binary_pipeline, binary_features),
+        ("cat_onehot", onehot_pipeline, onehot_features),
+    ]
 
-    preproc_pipeline = Pipeline([
-        ("feature_engineering", FunctionTransformer(engineer_features, validate=False)),
-        ("preprocessing", column_preprocessor)
-    ])
+    if ordinal_features:
+        ordinal_pipeline = Pipeline([
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            (
+                "encoder",
+                OrdinalEncoder(
+                    categories=[ordinal_features_map[col] for col in ordinal_features]
+                )
+            )
+        ])
+        transformers.append(("cat_ordinal", ordinal_pipeline, ordinal_features))
 
+    preprocessor = ColumnTransformer(transformers=transformers)
+    return preprocessor
+
+def fit_transform_preprocessor(X_train: pd.DataFrame, preprocessor):
+    X_train_processed = preprocessor.fit_transform(X_train)
+
+    feature_names = preprocessor.get_feature_names_out()
+
+    X_train_processed = pd.DataFrame(
+        X_train_processed,
+        columns=feature_names,
+        index=X_train.index
+    )
+
+    return X_train_processed
+
+def transform_preprocessor(X_test: pd.DataFrame, preprocessor):
+    X_test_processed = preprocessor.transform(X_test)
+
+    feature_names = preprocessor.get_feature_names_out()
+
+    X_test_processed = pd.DataFrame(
+        X_test_processed,
+        columns=feature_names,
+        index=X_test.index
+    )
+
+    return X_test_processed
     return preproc_pipeline
 
 #df = engineer_numerical_features(df)
