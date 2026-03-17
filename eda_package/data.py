@@ -16,6 +16,8 @@ Usage:
 
 import pandas as pd
 import numpy as np
+import datetime
+from typing import Tuple
 
 def load_raw_data(path: str = None) -> pd.DataFrame:
     """
@@ -24,7 +26,11 @@ def load_raw_data(path: str = None) -> pd.DataFrame:
     Returns:
         DataFrame with 119,390 rows × 32 columns (if unmodified Kaggle file).
     """
-    pass
+
+    if path is None:
+        path = '../raw_data/hotel_bookings.csv'
+    data = pd.read_csv(path)
+    return data
 
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -35,6 +41,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     3. Set missing values for agent, children and company to 0
     4. Impute rows with missing values in the country column with 'Other'
     """
+
     df = df.copy() # Create a copy of the original dataframe to avoid modifying it directly (to avoid warnings)
     #Remove duplicates
     df = df.drop_duplicates()
@@ -46,16 +53,30 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df['company'] = df['company'].fillna(0)
     #Impute rows with missing values in the country column with 'Other'
     df['country'] = df['country'].fillna('Other')
+
+    #Are there other data types that need to be changed or rows to be dropped?
+    #Consider dropping some of the columns?
+
     return df
 
-def temporal_split(df: pd.DataFrame)-> pd.DataFrame:
+def temporal_split(df: pd.DataFrame, arrival_date: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Split data temporally:
 
     This prevents data leakage from future bookings into the training set.
     Default: train on 2015–2016, test on 2017.
 
+    Input parameters:
+        - df: dataframe with data
+        - arrival_date: string with split date in the format 'YYYY-MM-DD'
+
     Returns:
         train, test
     """
+
+    split_datetime = pd.to_datetime(arrival_date)
+    year = split_datetime.year
+    month = split_datetime.month
+    day = split_datetime.day
+
     pass
