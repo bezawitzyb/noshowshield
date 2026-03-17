@@ -18,6 +18,7 @@ import pandas as pd
 import numpy as np
 import datetime
 from typing import Tuple
+from pathlib import Path
 from .registry import *
 
 def load_raw_data(path: str = None) -> pd.DataFrame:
@@ -29,7 +30,9 @@ def load_raw_data(path: str = None) -> pd.DataFrame:
     """
 
     if path is None:
-        path = '../raw_data/hotel_bookings.csv'
+        # Use absolute path based on project root
+        project_root = Path(__file__).parent.parent
+        path = project_root / 'raw_data' / 'hotel_bookings.csv'
     data = pd.read_csv(path)
     return data
 
