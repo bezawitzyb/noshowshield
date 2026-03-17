@@ -35,23 +35,10 @@ def group_countries(
 
 def engineer_numerical_features(X: pd.DataFrame) -> pd.DataFrame:
     """
-    Create engineered features from the raw hotel booking dataset.
-
-    This function:
+    Create engineered features from the raw hotel booking dataset:
     - removes the target if it is present
     - removes known leakage columns
     - converts ID-like columns into binary indicators
-    - creates additional behavioral features
-
-    Parameters
-    ----------
-    X : pd.DataFrame
-        Raw input dataframe.
-
-    Returns
-    -------
-    pd.DataFrame
-        Dataframe with engineered features added.
     """
     X = X.copy()
 
@@ -68,6 +55,7 @@ def engineer_numerical_features(X: pd.DataFrame) -> pd.DataFrame:
     # company ID -> binary flag
     if "company" in X.columns:
         X["company_booking"] = (X["company"] != 0).astype(int)
+        X = X.drop(columns="company")
 
     # agent ID -> binary flag
     if "agent" in X.columns:
@@ -81,58 +69,75 @@ def engineer_numerical_features(X: pd.DataFrame) -> pd.DataFrame:
 
     return X
 
+def get_feature_lists(df: pd.DataFrame):
+    """
+    Automatically determine numeric and binary feature lists
+    based on dataframe dtypes and values
+    """
+    # Get all numeric columns
+    numeric_cols = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
+
+    # Identify binary columns
+    binary_features = []
+    for col in numeric_cols:
+        unique_vals = set(df[col].dropna().unique())
+
+        # Check if column only contains 0 and 1
+        if unique_vals.issubset({0, 1}):
+            binary_features.append(col)
+
+    # Remaining numeric = true numeric
+    numeric_features = [
+        col for col in numeric_cols if col not in binary_features
+    ]
+
+    return numeric_features, binary_features
+
 def build_numerical_preprocessor(numeric_features, binary_features):
     """
-    Create a ColumnTransformer that preprocesses numerical features.
-
-    Parameters
-    ----------
-    numeric_features : list
-        Columns that should be scaled.
-
-    binary_features : list
-        Binary indicator columns (0/1) that should only be imputed.
-
-    Returns
-    -------
-    ColumnTransformer
-        Preprocessing transformer for numerical columns.
+    Build a ColumnTransformer for numerical preprocessing:
+    numeric_features : Continuous or count-based numerical columns to impute and scale
+    binary_features : Binary 0/1 columns to impute only
     """
-
-    # Continuous numerical features
+    # Continuous / count numerical features:
     numeric_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),  # fill missing values robustly
-        ("scaler", RobustScaler())  # scale while being robust to outliers
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", RobustScaler())
     ])
 
-    # Binary features
+    # Binary features:
     binary_pipeline = Pipeline([
         ("imputer", SimpleImputer(strategy="most_frequent"))
-        # no scaling because 0/1 values are already normalized
     ])
 
-    column_preprocessor = ColumnTransformer([
+    preprocessor = ColumnTransformer([
         ("num", numeric_pipeline, numeric_features),
-        ("bin", binary_pipeline, binary_features),
+        ("bin", binary_pipeline, binary_features)
     ])
 
-    return column_preprocessor
+    return preprocessor
 
 def build_preprocessing_pipeline(numeric_features, binary_features):
     """
-    Build the full preprocessing pipeline including
-    feature engineering and numerical preprocessing.
+    Build the full preprocessing pipeline:
+    feature engineering -> numerical preprocessing
     """
 
-    column_preprocessor = build_numerical_preprocessor(
-        numeric_features,
-        binary_features
+    numerical_preprocessor = build_numerical_preprocessor(
+        numeric_features=numeric_features,
+        binary_features=binary_features
     )
 
     preproc_pipeline = Pipeline([
         ("feature_engineering",
          FunctionTransformer(engineer_numerical_features, validate=False)),
-        ("preprocessing", column_preprocessor)
+        ("preprocessing", numerical_preprocessor)
     ])
 
     return preproc_pipeline
+
+#df = engineer_numerical_features(df)
+#numeric_features, binary_features = get_feature_lists(df)
+#preproc_pipeline = build_preprocessing_pipeline(
+   # numeric_features=numeric_features,
+   # binary_features=binary_features)
