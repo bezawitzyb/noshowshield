@@ -37,6 +37,7 @@ def group_countries(
     )
 
     #df = df.drop(columns='country')
+    #df = df.drop(columns=['country'])
 
     return df
 
@@ -159,3 +160,17 @@ def transform_preprocessor(X_test: pd.DataFrame, preprocessor):
     )
 
     return X_test_processed
+    return preproc_pipeline
+
+#df = engineer_numerical_features(df)
+#numeric_features, binary_features = get_feature_lists(df)
+#preproc_pipeline = build_preprocessing_pipeline(
+   # numeric_features=numeric_features,
+   # binary_features=binary_features)
+
+
+
+
+
+def preproc_test():
+    print("Hello from preprocessor!")
