@@ -18,6 +18,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import RobustScaler, OneHotEncoder, OrdinalEncoder
+from registry import *
 
 def group_countries(
     df:pd.DataFrame,
@@ -168,6 +169,43 @@ def transform_preprocessor(X_test: pd.DataFrame, preprocessor):
    # numeric_features=numeric_features,
    # binary_features=binary_features)
 
+def preprocess_pipeline(X_train: pd.DataFrame, X_test: pd.DataFrame, ordinal_feature_map: dict = None):
+    """
+    Run the full preprocessing pipeline: detect feature types, build the
+    ColumnTransformer, fit on training data, and transform both splits.
+
+    Parameters
+    ----------
+    X_train : pd.DataFrame
+        Training features (used to fit the preprocessor).
+    X_test : pd.DataFrame
+        Test features (transformed only, never fitted).
+    ordinal_feature_map : dict
+        Mapping of ordinal feature name -> list of ordered categories.
+        Pass an empty dict if there are no ordinal features.
+
+    Returns
+    -------
+        - X_train_processed : pd.DataFrame
+        - X_test_processed  : pd.DataFrame
+    """
+    # Use default if not passed
+    if ordinal_feature_map is None:
+        ordinal_feature_map = ORDINAL_FEATURES_MAP
+
+    # 1 ── Detect feature types
+    feature_lists = get_feature_lists(X_train, ordinal_feature_map)
+
+    # 2 ── Build (unfitted) preprocessor
+    preprocessor = create_preprocessor(feature_lists, ordinal_feature_map)
+
+    # 3 ── Fit on train, transform train
+    X_train_processed = fit_transform_preprocessor(X_train, preprocessor)
+
+    # 4 ── Transform test (no fitting)
+    X_test_processed = transform_preprocessor(X_test, preprocessor)
+
+    return X_train_processed, X_test_processed
 
 
 

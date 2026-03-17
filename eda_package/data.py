@@ -18,6 +18,7 @@ import pandas as pd
 import numpy as np
 import datetime
 from typing import Tuple
+from registry import *
 
 def load_raw_data(path: str = None) -> pd.DataFrame:
     """
@@ -115,7 +116,7 @@ def split_X_y(df: pd.DataFrame):
     Returns:
         X, y
     """
-    drop_cols = ["is_canceled", "reservation_status", "reservation_status_date"]
+    drop_cols = LEAKY_COLS
 
     X = df.drop(columns=drop_cols)
     y = df["is_canceled"]
