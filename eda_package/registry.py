@@ -7,3 +7,5 @@ ORDINAL_FEATURES_MAP = {
         "Undefined", "SC", "BB", "HB", "FB"
     ]
 }
+
+COUNTRY_LIMIT = 30
