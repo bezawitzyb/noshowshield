@@ -24,7 +24,11 @@ def load_raw_data(path: str = None) -> pd.DataFrame:
     Returns:
         DataFrame with 119,390 rows × 32 columns (if unmodified Kaggle file).
     """
-    pass
+
+    if path is None:
+        path = '../raw_data/hotel_bookings.csv'
+    data = pd.read_csv(path)
+    return data
 
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -35,6 +39,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     3. Set missing values for agent, children and company to 0
     4. Impute rows with missing values in the country column with 'Other'
     """
+
     df = df.copy() # Create a copy of the original dataframe to avoid modifying it directly (to avoid warnings)
     #Remove duplicates
     df = df.drop_duplicates()
@@ -46,6 +51,10 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     df['company'] = df['company'].fillna(0)
     #Impute rows with missing values in the country column with 'Other'
     df['country'] = df['country'].fillna('Other')
+
+    #Are there other data types that need to be changed or rows to be dropped?
+    #Consider dropping some of the columns?
+
     return df
 
 def temporal_split(df: pd.DataFrame)-> pd.DataFrame:
@@ -58,4 +67,6 @@ def temporal_split(df: pd.DataFrame)-> pd.DataFrame:
     Returns:
         train, test
     """
+
+
     pass
