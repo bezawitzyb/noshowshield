@@ -144,3 +144,30 @@ def engineer_features(
     df = add_special_requests_per_guest(df)
     df = add_weekend_ratio(df)
     return df
+
+def engineer_features_v2(
+    df: pd.DataFrame,
+    split_year: int = SPLIT_YEAR,
+) -> pd.DataFrame:
+    """
+    Apply all feature engineering in one call.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Full dataset (train + test combined).
+    split_year : int
+        Rows with arrival_date_year < this value are treated
+        as training data for any aggregation-based features.
+
+    Returns
+    -------
+    pd.DataFrame with new columns added.
+    """
+    df = df.copy()
+    df = add_room_type_mismatch(df)
+    df = add_adr_deviation_from_segment(df, split_year)
+    #df = add_segment_cancel_rate(df, split_year)
+    df = add_special_requests_per_guest(df)
+    df = add_weekend_ratio(df)
+    return df
