@@ -161,13 +161,6 @@ def transform_preprocessor(X_test: pd.DataFrame, preprocessor):
     )
 
     return X_test_processed
-    return preproc_pipeline
-
-#df = engineer_numerical_features(df)
-#numeric_features, binary_features = get_feature_lists(df)
-#preproc_pipeline = build_preprocessing_pipeline(
-   # numeric_features=numeric_features,
-   # binary_features=binary_features)
 
 def preprocess_pipeline(X_train: pd.DataFrame, X_test: pd.DataFrame, ordinal_feature_map: dict = None):
     """
@@ -206,9 +199,3 @@ def preprocess_pipeline(X_train: pd.DataFrame, X_test: pd.DataFrame, ordinal_fea
     X_test_processed = transform_preprocessor(X_test, preprocessor)
 
     return X_train_processed, X_test_processed
-
-
-
-
-def preproc_test():
-    print("Hello from preprocessor!")

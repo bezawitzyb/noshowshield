@@ -13,26 +13,25 @@ Usage:
     df = clean_data(df)
     train, test = temporal_split(df)
 """
-
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import datetime
 from typing import Tuple
 from .registry import *
 
+
 def load_raw_data(path: str = None) -> pd.DataFrame:
     """
     Load the raw hotel bookings CSV.
-
-    Returns:
-        DataFrame with 119,390 rows × 32 columns (if unmodified Kaggle file).
     """
 
     if path is None:
-        path = '../raw_data/hotel_bookings.csv'
+        base_dir = Path(__file__).resolve().parents[1]
+        path = base_dir / "raw_data" / "hotel_bookings.csv"
+
     data = pd.read_csv(path)
     return data
-
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
