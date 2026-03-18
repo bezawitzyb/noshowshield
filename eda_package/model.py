@@ -15,6 +15,7 @@ Usage:
     metrics = evaluate_model(pipeline, X_test, y_test)
 """
 import pandas as pd
+import pickle
 from eda_package.data import load_raw_data, clean_data, temporal_split_v2, temporal_split, split_X_y
 from eda_package.features import engineer_features
 from eda_package.preprocessor import (
@@ -24,7 +25,7 @@ from eda_package.preprocessor import (
     fit_transform_preprocessor,
     transform_preprocessor
 )
-from eda_package.registry import ORDINAL_FEATURES_MAP, COUNTRY_LIMIT
+from eda_package.registry import ORDINAL_FEATURES_MAP, COUNTRY_LIMIT, WORKING_MODEL_FILE_NAME
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_validate
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
@@ -32,9 +33,17 @@ from xgboost import XGBClassifier
 
 class BookingPredictor():
 
+    def __init__(self,
+                 file_name: str = None,
+                 X_train_processed: pd.DataFrame = None,
+                 y_train: pd.Series = None):
 
+        if X_train_processed is not None and y_train is not None:
+            self.train_model(X_train_processed, y_train)
+        else:
+            self.load_model(file_name=file_name)
 
-    def __init__(self, X_train_processed, y_train):
+    def train_model(self, X_train_processed, y_train):
         parameters = {
             'n_estimators': 100, #100, 300
             'max_depth': 3, #3, 10
@@ -56,6 +65,8 @@ class BookingPredictor():
 
     def test(self, X_test_processed, y_test):
 
+        print('Testing', type(self.model))
+
         y_predicted = self.model.predict(X_test_processed)
 
         print(f'Accuracy: {round(accuracy_score(y_test, y_predicted),2)}')
@@ -68,8 +79,24 @@ class BookingPredictor():
 
         return self.model.predict(X_processed)
 
+    def save_model(self, file_name: str = None):
 
+        if file_name is None:
+            file_name = WORKING_MODEL_FILE_NAME
 
+        url = '../models/' + file_name
+        #print('Saving: ', url)
+        pickle.dump(self.model, open(url, 'wb'))
+
+    def load_model(self, file_name: str):
+
+        if file_name is None:
+            file_name = WORKING_MODEL_FILE_NAME
+
+        self.model = XGBClassifier()
+        url = '../models/' + file_name
+        #print('Loading: ', url)
+        self.model = pickle.load(open(url, 'rb'))
 
 def the_brain():
     df = load_raw_data()
