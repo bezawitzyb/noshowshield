@@ -17,7 +17,9 @@ Usage:
 import os
 import joblib
 import pandas as pd
+import numpy as np
 import pickle
+from .registry import *
 from eda_package import *
 from eda_package.data import load_raw_data, clean_data, temporal_split_v2, temporal_split, split_X_y
 from eda_package.features import engineer_features
@@ -143,62 +145,129 @@ def the_brain():
     print(f'Precision: {round(precision_score(y_test, y_predicted),2)}')
     print(f'F1 score: {round(f1_score(y_test, y_predicted),2)}')
 
+
+
+
 class SimpleModelPipeline:
+    """
+    End-to-end pipeline:
+        1.  Load → clean → feature-engineer → temporal split
+        2.  Train a calibrated logistic regression
+        3.  Predict per-booking cancel probability
+        4.  Aggregate by (date, room_type): expected cancellations,
+            std dev, 95 % CI
+        5.  For each group, sweep extra bookings 0 … 30 using the
+            Poisson-Binomial distribution and pick the level that
+            maximises  E[revenue] – E[relocation cost]  while keeping
+            P(relocation) ≤ max_risk
+        6.  Return a single DataFrame with everything
+    """
+
     def __init__(
         self,
-        path="/Users/beza/code/bezawitzyb/noshowshield/raw_data/hotel_bookings.csv",
-        country_limit=COUNTRY_LIMIT,
-        split_year=SPLIT_YEAR,
-        ordinal_features_map=ORDINAL_FEATURES_MAP,
-        model_folder="/Users/beza/code/bezawitzyb/noshowshield/models",
-        random_state=42
+        path: str = "/Users/beza/code/bezawitzyb/noshowshield/raw_data/hotel_bookings.csv",
+        country_limit: int = COUNTRY_LIMIT,
+        split_year: int = SPLIT_YEAR,
+        ordinal_features_map: dict = None,
+        model_folder: str = "models",
+        random_state: int = 42,
+        relocation_cost: float = DEFAULT_RELOCATION_COST,
+        max_risk: float = DEFAULT_MAX_RISK,
+        max_extra_sweep: int = MAX_EXTRA_SWEEP,
     ):
         self.path = path
         self.country_limit = country_limit
         self.split_year = split_year
-        self.ordinal_features_map = ordinal_features_map
+        self.ordinal_features_map = ordinal_features_map or ORDINAL_FEATURES_MAP
         self.model_folder = model_folder
         self.random_state = random_state
+        self.relocation_cost = relocation_cost
+        self.max_risk = max_risk
+        self.max_extra_sweep = max_extra_sweep
 
         self.model = None
+        self.test_df = None       # raw test rows (kept for grouping)
+        self.capacity_map = None  # inferred {room_type: capacity}
 
-    # -----------------------------
-    # Data Pipeline
-    # -----------------------------
+    # ================================================================
+    #  1.  DATA PIPELINE
+    # ================================================================
+    def _build_arrival_date(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Compose a datetime from the split year / month-name / day columns."""
+        df = df.copy()
+        df["arrival_date"] = pd.to_datetime(
+            df["arrival_date_year"].astype(str)
+            + "-"
+            + df["arrival_date_month"]
+            + "-"
+            + df["arrival_date_day_of_month"].astype(str),
+            format="%Y-%B-%d",
+        )
+        return df
+
+    def _infer_capacity(self, df: pd.DataFrame) -> dict:
+        """
+        Infer physical room capacity per room type from the data.
+
+        Strategy: for each room type, take the maximum number of
+        bookings observed on any single arrival date.  This is a
+        reasonable proxy when real capacity isn't provided.
+        """
+        counts = (
+            df.groupby(["arrival_date", "assigned_room_type"])
+            .size()
+            .reset_index(name="n_bookings")
+        )
+        capacity = (
+            counts.groupby("assigned_room_type")["n_bookings"]
+            .max()
+            .to_dict()
+        )
+        return capacity
+
     def load_and_preprocess(self):
+        """Run the full data pipeline and return processed train/test arrays."""
         df = load_raw_data(self.path)
         df = clean_data(df)
         df = group_countries(df, self.country_limit)
         df = engineer_features(df)
+        df = self._build_arrival_date(df)
+
+        # Infer capacity from the FULL dataset (before splitting)
+        self.capacity_map = self._infer_capacity(df)
 
         train, test = temporal_split(df, self.split_year)
+        self.test_df = test.copy()
+
         X_train, y_train = split_X_y(train)
         X_test, y_test = split_X_y(test)
+
+        # Drop columns that are only used for aggregation, not modelling
+        drop_cols = ["arrival_date"]
+        X_train = X_train.drop(columns=[c for c in drop_cols if c in X_train.columns])
+        X_test = X_test.drop(columns=[c for c in drop_cols if c in X_test.columns])
 
         X_train_processed, X_test_processed = preprocess_pipeline(
             X_train, X_test, self.ordinal_features_map
         )
-
         return X_train_processed, X_test_processed, y_train, y_test
 
-    # -----------------------------
-    # Model Training
-    # -----------------------------
+    # ================================================================
+    #  2.  MODEL TRAINING
+    # ================================================================
     def train(self, X_train, y_train):
-        base_model = LogisticRegression(
+        base = LogisticRegression(
             max_iter=500,
-            class_weight='balanced',
-            random_state=self.random_state
+            class_weight="balanced",
+            random_state=self.random_state,
         )
-
-        self.model = CalibratedClassifierCV(base_model, method='sigmoid', cv=3)
+        self.model = CalibratedClassifierCV(base, method="sigmoid", cv=3)
         self.model.fit(X_train, y_train)
-
         return self.model
 
-    # -----------------------------
-    # Prediction
-    # -----------------------------
+    # ================================================================
+    #  3.  PREDICTION
+    # ================================================================
     def predict(self, X):
         if self.model is None:
             raise ValueError("Model is not trained yet.")
@@ -209,125 +278,341 @@ class SimpleModelPipeline:
             raise ValueError("Model is not trained yet.")
         return self.model.predict_proba(X)[:, 1]
 
-    # -----------------------------
-    # Evaluation
-    # -----------------------------
+    # ================================================================
+    #  4.  EVALUATION
+    # ================================================================
     def evaluate(self, y_true, y_pred, y_proba, verbose=True):
         metrics = {
             "accuracy": accuracy_score(y_true, y_pred),
             "roc_auc": roc_auc_score(y_true, y_proba),
             "precision": precision_score(y_true, y_pred, pos_label=1),
             "recall": recall_score(y_true, y_pred, pos_label=1),
-            "brier": brier_score_loss(y_true, y_proba)
+            "brier": brier_score_loss(y_true, y_proba),
         }
-
-        targets = {
-            "roc_auc": 0.85,
-            "precision": 0.8,
-            "recall": 0.75,
-            "brier": 0.15
-        }
+        targets = {"roc_auc": 0.85, "precision": 0.80, "recall": 0.75, "brier": 0.15}
 
         if verbose:
-            print("\nMetrics:")
+            print("\n── Evaluation ──")
             for k, v in metrics.items():
-                print(f"{k.capitalize():<10}: {v:.4f}", end="")
+                line = f"  {k:<12}: {v:.4f}"
                 if k in targets:
                     target = targets[k]
-                    passed = (v >= target) if k != "brier" else (v <= target)
-                    print(f" | Target: {target} | {'✅' if passed else '❌'}")
-                else:
-                    print()
-
+                    ok = (v >= target) if k != "brier" else (v <= target)
+                    line += f"  (target {'≤' if k == 'brier' else '≥'} {target}  {'✅' if ok else '❌'})"
+                print(line)
         return metrics
 
-    # -----------------------------
-    # Poisson Binomial
-    # -----------------------------
-    def poisson_binomial_pmf(self, probs):
-        probs = np.array(probs)
+    # ================================================================
+    #  5.  POISSON-BINOMIAL HELPERS
+    # ================================================================
+    @staticmethod
+    def _poisson_binomial_pmf(probs: np.ndarray) -> np.ndarray:
+        """
+        Exact PMF via dynamic programming.
+        probs : array of individual *cancellation* probabilities.
+        Returns P(k cancellations) for k = 0 … n.
+        """
+        probs = np.asarray(probs, dtype=np.float64)
         n = len(probs)
-
         pmf = np.zeros(n + 1)
         pmf[0] = 1.0
-
         for p in probs:
-            pmf[1:] = pmf[1:] * (1 - p) + pmf[:-1] * p
-            pmf[0] = pmf[0] * (1 - p)
-
+            new = np.empty_like(pmf)
+            new[0] = pmf[0] * (1 - p)
+            new[1:] = pmf[1:] * (1 - p) + pmf[:-1] * p
+            pmf = new
         return pmf
 
-    def poisson_binomial_stats(self, probs):
-        probs = np.array(probs)
+    @staticmethod
+    def _poisson_binomial_stats(probs: np.ndarray):
+        """Mean and variance of total cancellations."""
+        probs = np.asarray(probs, dtype=np.float64)
         mean = probs.sum()
-        var = np.sum(probs * (1 - probs))
+        var = (probs * (1 - probs)).sum()
         return mean, var
 
-    def poisson_binomial_cdf(self, probs):
-        pmf = self.poisson_binomial_pmf(probs)
-        return np.cumsum(pmf)
-
-    def prob_at_least_k(self, probs, k):
-        pmf = self.poisson_binomial_pmf(probs)
-        return pmf[k:].sum()
-
-    def prob_at_most_k(self, probs, k):
-        pmf = self.poisson_binomial_pmf(probs)
-        return pmf[:k + 1].sum()
-
-    def analyze_no_show_risk(self, probs, threshold_k):
+    # ================================================================
+    #  6.  OVERBOOKING OPTIMISER  (per group)
+    # ================================================================
+    def _optimise_group(
+        self,
+        cancel_probs: np.ndarray,
+        capacity: int,
+        mean_adr: float,
+    ) -> dict:
         """
-        High-level helper for business decisions.
-        """
-        mean, var = self.poisson_binomial_stats(probs)
-        prob_exceed = self.prob_at_least_k(probs, threshold_k)
+        Sweep extra bookings 0 … max_extra_sweep.
+        For each candidate level, compute:
+            • P(show-ups > capacity)  via Poisson-Binomial on show-up probs
+            • expected revenue gain   = extra × mean_adr
+            • expected relocation cost = P(relocate) × E[excess] × relocation_cost
+            • net profit              = revenue − cost
 
-        return {
-            "expected_no_shows": mean,
-            "variance": var,
-            "prob_at_least_k": prob_exceed
+        Stop when P(relocate) > max_risk.
+        Return the best (extra, profit) and supporting numbers.
+        """
+        cancel_probs = np.asarray(cancel_probs, dtype=np.float64)
+        n_current = len(cancel_probs)
+        show_probs = 1.0 - cancel_probs          # per-booking show-up probability
+
+        best = {
+            "recommended_extra": 0,
+            "recommended_total": n_current,
+            "net_benefit": 0.0,
+            "additional_revenue": 0.0,
+            "expected_relocation_cost": 0.0,
+            "relocation_probability": 0.0,
         }
 
-    # -----------------------------
-    # Save / Load
-    # -----------------------------
+        for extra in range(0, self.max_extra_sweep + 1):
+            total = n_current + extra
+
+            # For the extra bookings we don't have individual probs,
+            # so we use the group's mean cancel probability as the best
+            # available estimate for hypothetical new bookings.
+            if extra > 0:
+                mean_cancel = cancel_probs.mean()
+                extended_show = np.concatenate([
+                    show_probs,
+                    np.full(extra, 1.0 - mean_cancel),
+                ])
+            else:
+                extended_show = show_probs
+
+            # PMF of total show-ups (k = 0 … total)
+            show_pmf = self._poisson_binomial_pmf(extended_show)
+
+            # P(need to relocate) = P(show-ups > capacity)
+            if capacity + 1 <= total:
+                p_relocate = show_pmf[capacity + 1:].sum()
+            else:
+                p_relocate = 0.0
+
+            # If we've breached the risk ceiling, stop searching
+            if p_relocate > self.max_risk:
+                break
+
+            # E[excess guests] = Σ (k - capacity) × P(k)  for k > capacity
+            expected_excess = sum(
+                (k - capacity) * show_pmf[k]
+                for k in range(capacity + 1, total + 1)
+            )
+
+            revenue = extra * mean_adr
+            cost = expected_excess * self.relocation_cost
+            profit = revenue - cost
+
+            if profit >= best["net_benefit"]:
+                best = {
+                    "recommended_extra": extra,
+                    "recommended_total": total,
+                    "net_benefit": round(profit, 2),
+                    "additional_revenue": round(revenue, 2),
+                    "expected_relocation_cost": round(cost, 2),
+                    "relocation_probability": round(p_relocate, 4),
+                }
+
+        return best
+
+    # ================================================================
+    #  7.  AGGREGATE + RECOMMEND  (all groups)
+    # ================================================================
+    def aggregate_and_recommend(
+        self,
+        raw_df: pd.DataFrame,
+        X_processed,
+        group_cols: tuple = ("arrival_date", "assigned_room_type"),
+    ) -> pd.DataFrame:
+        """
+        1. Attach cancel probs and ADR to raw test rows.
+        2. Group by (date, room_type).
+        3. For each group compute:
+             - total_bookings, expected_cancellations, std, 95% CI
+             - expected_show_ups
+             - capacity (inferred)
+             - optimal overbooking recommendation + financials
+        4. Return a single, flat DataFrame.
+        """
+        probs = self.predict_proba(X_processed)
+        df = raw_df.copy()
+        df["cancel_prob"] = probs
+
+        # ── group-level aggregation ──
+        grouped = (
+            df.groupby(list(group_cols))
+            .agg(
+                total_bookings=("cancel_prob", "size"),
+                expected_cancellations=("cancel_prob", "sum"),
+                cancel_prob_mean=("cancel_prob", "mean"),
+                cancel_prob_std=("cancel_prob", "std"),
+                mean_adr=("adr", "mean"),
+                individual_probs=("cancel_prob", list),
+            )
+            .reset_index()
+        )
+
+        # ── Poisson-Binomial stats per group ──
+        grouped["variance"] = grouped["individual_probs"].apply(
+            lambda ps: np.sum(np.array(ps) * (1 - np.array(ps)))
+        )
+        grouped["std_cancellations"] = np.sqrt(grouped["variance"])
+
+        grouped["ci_lower"] = (
+            grouped["expected_cancellations"] - 1.96 * grouped["std_cancellations"]
+        ).clip(lower=0)
+        grouped["ci_upper"] = (
+            grouped["expected_cancellations"] + 1.96 * grouped["std_cancellations"]
+        )
+
+        grouped["expected_show_ups"] = (
+            grouped["total_bookings"] - grouped["expected_cancellations"]
+        )
+
+        # ── map inferred capacity ──
+        room_col = "assigned_room_type"
+        grouped["capacity"] = grouped[room_col].map(self.capacity_map)
+
+        # Fallback: if a room type wasn't seen, use total_bookings
+        grouped["capacity"] = grouped["capacity"].fillna(grouped["total_bookings"])
+        grouped["capacity"] = grouped["capacity"].astype(int)
+
+        # ── run the optimiser for every group ──
+        recommendations = []
+        for _, row in grouped.iterrows():
+            rec = self._optimise_group(
+                cancel_probs=np.array(row["individual_probs"]),
+                capacity=row["capacity"],
+                mean_adr=row["mean_adr"],
+            )
+            recommendations.append(rec)
+
+        rec_df = pd.DataFrame(recommendations)
+        result = pd.concat(
+            [grouped.drop(columns=["individual_probs"]).reset_index(drop=True), rec_df],
+            axis=1,
+        )
+
+        # ── tidy column order ──
+        leading = list(group_cols) + [
+            "capacity",
+            "total_bookings",
+            "expected_cancellations",
+            "std_cancellations",
+            "ci_lower",
+            "ci_upper",
+            "expected_show_ups",
+            "mean_adr",
+            "recommended_extra",
+            "recommended_total",
+            "additional_revenue",
+            "expected_relocation_cost",
+            "net_benefit",
+            "relocation_probability",
+        ]
+        extra_cols = [c for c in result.columns if c not in leading]
+        result = result[[c for c in leading if c in result.columns] + extra_cols]
+
+        return result
+
+    # ================================================================
+    #  8.  SAVE / LOAD
+    # ================================================================
     def save_model(self, model_name="model", add_timestamp=True):
         if self.model is None:
             raise ValueError("No model to save.")
-
         os.makedirs(self.model_folder, exist_ok=True)
-
-        if add_timestamp:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{model_name}_{timestamp}.joblib"
-        else:
-            filename = f"{model_name}.joblib"
-
-        path = os.path.join(self.model_folder, filename)
+        ts = f"_{datetime.now().strftime('%Y%m%d_%H%M%S')}" if add_timestamp else ""
+        path = os.path.join(self.model_folder, f"{model_name}{ts}.joblib")
         joblib.dump(self.model, path)
-
-        print(f"Model saved to: {path}")
+        print(f"Model saved → {path}")
         return path
 
     def load_model(self, path):
         self.model = joblib.load(path)
         return self.model
 
-    # -----------------------------
-    # Full Pipeline
-    # -----------------------------
-    def run(self):
+    # ================================================================
+    #  9.  FULL PIPELINE  (one-call entry point)
+    # ================================================================
+    def run(self) -> dict:
+        """
+        Execute the entire pipeline and return:
+            - model           : the trained classifier
+            - metrics         : dict of evaluation scores
+            - recommendations : DataFrame with group stats +
+                                overbooking recommendation + financials
+        """
+        # Data
         X_train, X_test, y_train, y_test = self.load_and_preprocess()
 
+        # Train
         self.train(X_train, y_train)
 
+        # Evaluate
         y_pred = self.predict(X_test)
         y_proba = self.predict_proba(X_test)
-
         metrics = self.evaluate(y_test, y_pred, y_proba)
+
+        # Aggregate + optimise
+        recommendations = self.aggregate_and_recommend(self.test_df, X_test)
 
         return {
             "model": self.model,
             "metrics": metrics,
-            "probabilities": y_proba
+            "recommendations": recommendations,
         }
+
+    def run_from_saved_model(self, model_path: str) -> dict:
+        """
+        Execute the pipeline using a pre-trained saved model.
+        Skips training — loads model from disk, then evaluates
+        and generates overbooking recommendations.
+
+        Parameters
+        ----------
+        model_path : str
+            Path to a .joblib model file saved via self.save_model().
+
+        Returns
+        -------
+        dict with keys:
+            - model           : the loaded classifier
+            - metrics         : dict of evaluation scores
+            - recommendations : DataFrame with group stats +
+                                overbooking recommendations + financials
+        """
+        # Data
+        X_train, X_test, y_train, y_test = self.load_and_preprocess()
+
+        # Load instead of train
+        self.load_model(model_path)
+        print(f"Model loaded from → {model_path}")
+
+        # Evaluate
+        y_pred = self.predict(X_test)
+        y_proba = self.predict_proba(X_test)
+        metrics = self.evaluate(y_test, y_pred, y_proba)
+
+        # Aggregate + optimise
+        recommendations = self.aggregate_and_recommend(self.test_df, X_test)
+
+        return {
+            "model": self.model,
+            "metrics": metrics,
+            "recommendations": recommendations,
+        }
+
+    def get_recommendations(self, recs, dates, room_types):
+        if isinstance(dates, str):
+            dates = [dates]
+        if isinstance(room_types, str):
+            room_types = [room_types]
+
+        timestamps = [pd.Timestamp(d) for d in dates]
+
+        filtered = recs[
+            (recs["arrival_date"].isin(timestamps)) &
+            (recs["assigned_room_type"].isin(room_types))
+        ].reset_index(drop=True)
+
+        return filtered
