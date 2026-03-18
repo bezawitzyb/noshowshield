@@ -180,11 +180,13 @@ def train_model():
 class SimpleModelPipeline:
     def __init__(
         self,
-        path="/Users/beza/code/bezawitzyb/noshowshield/raw_data/hotel_bookings.csv",
+        #path="/Users/beza/code/bezawitzyb/noshowshield/raw_data/hotel_bookings.csv",
+        path= BASE_DIR / "raw_data" / "hotel_bookings.csv",
         country_limit=COUNTRY_LIMIT,
         split_year=SPLIT_YEAR,
         ordinal_features_map=ORDINAL_FEATURES_MAP,
-        model_folder="/Users/beza/code/bezawitzyb/noshowshield/models",
+        #model_folder="/Users/beza/code/bezawitzyb/noshowshield/models",
+        model_folder= BASE_DIR / "models",
         random_state=42
     ):
         self.path = path
@@ -209,11 +211,11 @@ class SimpleModelPipeline:
         X_train, y_train = split_X_y(train)
         X_test, y_test = split_X_y(test)
 
-        X_train_processed, X_test_processed, preprocessor = preprocess_pipeline(
+        X_train_processed, X_test_processed, _ = preprocess_pipeline(
             X_train, X_test, self.ordinal_features_map
         )
 
-        return X_train_processed, X_test_processed, y_train, y_test, preprocessor
+        return X_train_processed, X_test_processed, y_train, y_test
 
     # -----------------------------
     # Model Training
