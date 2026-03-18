@@ -68,7 +68,6 @@ class BookingPredictor():
         self.model = XGBClassifier(**parameters)
         self.model.fit(X_train_processed,y_train)
 
-
     def test(self, X_test_processed, y_test):
 
         print('Testing', type(self.model))
@@ -94,15 +93,17 @@ class BookingPredictor():
         #print('Saving: ', url)
         pickle.dump(self.model, open(url, 'wb'))
 
-    def load_model(self, file_name: str):
+    def load_model(self, file_name: str = None):
 
         if file_name is None:
             file_name = WORKING_MODEL_FILE_NAME
 
-        self.model = XGBClassifier()
+#        self.model = XGBClassifier()
         url = '../models/' + file_name
         #print('Loading: ', url)
         self.model = pickle.load(open(url, 'rb'))
+
+
 
 def the_brain():
     df = load_raw_data()
