@@ -87,6 +87,4 @@ def predict(
         "total_of_special_requests": total_of_special_requests
     }])
 
-    result = pred(X_pred)
-
-    return result
+    return pred(X_pred)
