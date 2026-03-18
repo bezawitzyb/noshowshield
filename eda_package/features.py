@@ -1,162 +1,173 @@
 """
-NoShowShield — Feature engineering pipeline.
-
-Responsibilities:
-    - Create new features from raw columns
-    - Each transform is an independent function (testable, composable)
-    - engineer_all_features() runs the full pipeline in correct order
+NoShowShield — Feature Engineering Module
+==========================================
+All features are computed BEFORE train/test split.
+Temporal filtering ensures no future data leaks into
+statistics used for feature construction.
 
 Usage:
-    from noshowshield.ml_logic.features import engineer_all_features
+    from registry import SPLIT_YEAR
+    df = pd.read_csv('hotel_bookings.csv')
+    df = engineer_features(df)
 
-    df = engineer_all_features(df)
-
-Design principles:
-    - Every function takes a DataFrame and returns a DataFrame (chainable)
-    - No function drops columns — that's data.py's job
-    - Each function is idempotent: running it twice produces the same result
-    - Functions are ordered: rolling features depend on temporal sorting
+    # Now split
+    train = df[df['arrival_date_year'] < SPLIT_YEAR]
+    test  = df[df['arrival_date_year'] >= SPLIT_YEAR]
 """
-
 
 import pandas as pd
 import numpy as np
+from .registry import SPLIT_YEAR
 
 
-def add_stay_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Create stay-duration and guest-composition features.
-
-    New columns:
-        total_stay_nights  — weekend + weekday nights
-        has_children       — flag for children or babies present
+def add_room_type_mismatch(df: pd.DataFrame) -> pd.DataFrame:
     """
-    df = df.copy()
+    Binary flag: 1 when assigned room differs from reserved room.
 
-    df['total_stay_nights'] = df['stays_in_weekend_nights'] + df['stays_in_week_nights']
-    df['has_children'] = ((df['children'] > 0) | (df['babies'] > 0)).astype(int)
-
+    No temporal concern — purely row-level, no aggregation involved.
+    """
+    df['room_type_mismatch'] = (
+        df['reserved_room_type'] != df['assigned_room_type']
+    ).astype(int)
     return df
 
 
-def add_lead_time_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Create lead-time derived features.
-
-    New columns:
-        is_last_minute    — booked within 3 days of arrival
+def add_adr_deviation_from_segment(
+    df: pd.DataFrame,
+    split_year: int = SPLIT_YEAR,
+) -> pd.DataFrame:
     """
-    df = df.copy()
-    df['is_last_minute'] = (df['lead_time'] <= 3).astype(int)
+    How far a booking's ADR deviates from the average ADR
+    in its market segment.
 
-    return df
-
-
-def add_calendar_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Create calendar and seasonal features from arrival_date.
-
-    Requires 'arrival_date' column (datetime).
-
-    New columns:
-        season                — Winter / Spring / Summer / Autumn
+    Leakage prevention:
+      Segment means are computed ONLY on rows where
+      arrival_date_year < split_year, then mapped
+      back to the full dataset. This way test-period
+      bookings never influence the baseline they're
+      measured against.
     """
-    df = df.copy()
+    train_mask = df['arrival_date_year'] < split_year
 
-    month_to_season = {
-        'January': 'Winter', 'February': 'Winter', 'March': 'Spring',
-        'April': 'Spring', 'May': 'Spring', 'June': 'Summer',
-        'July': 'Summer', 'August': 'Summer', 'September': 'Autumn',
-        'October': 'Autumn', 'November': 'Autumn', 'December': 'Winter'
-    }
-    df['season'] = df['arrival_date_month'].map(month_to_season)
-
-    return df
-
-
-def add_booking_history_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Create customer history and engagement features.
-
-    New columns:
-        total_previous_bookings — cancelled + not-cancelled history
-        prev_cancel_ratio       — fraction of past bookings cancelled (-1 = no history)
-    """
-    df = df.copy()
-
-    df['total_previous_bookings'] = (
-        df['previous_cancellations'] + df['previous_bookings_not_canceled']
-    )
-    df['prev_cancel_ratio'] = np.where(
-        df['total_previous_bookings'] > 0,
-        df['previous_cancellations'] / df['total_previous_bookings'],
-        -1  # -1 signals "no history" — a distinct category for the model
+    segment_means = (
+        df.loc[train_mask]
+        .groupby('market_segment')['adr']
+        .mean()
     )
 
+    global_mean = segment_means.mean()
+    mapped_means = df['market_segment'].map(segment_means).fillna(global_mean)
+
+    df['adr_deviation_from_segment'] = df['adr'] - mapped_means
     return df
 
 
-def add_price_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Create price and revenue features from ADR.
-
-    Requires 'total_guests' and 'total_stay_nights' (call add_stay_features first).
-
-    New columns:
-        total_revenue   — ADR * max(total_stay_nights, 1)
+def add_segment_cancel_rate(
+    df: pd.DataFrame,
+    split_year: int = SPLIT_YEAR,
+) -> pd.DataFrame:
     """
-    df = df.copy()
-    df['total_revenue'] = df['adr'] * np.maximum(df['total_stay_nights'], 1)
+    Historical cancellation rate for each market segment.
 
-    return df
-
-
-def add_segment_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Create market-segment features.
-
-    New columns:
-        segment_cancel_rate — historical cancel rate for this segment
+    Leakage prevention:
+      Cancel rates are computed ONLY on rows where
+      arrival_date_year < split_year. Without this,
+      the target variable (is_canceled) from test-period
+      bookings leaks directly into the feature — the model
+      would be learning from future outcomes.
     """
-    df = df.copy()
+    train_mask = df['arrival_date_year'] < split_year
 
-    df['segment_cancel_rate'] = df.groupby('market_segment')['is_canceled'].transform('mean')
+    segment_rates = (
+        df.loc[train_mask]
+        .groupby('market_segment')['is_canceled']
+        .mean()
+    )
 
+    global_rate = df.loc[train_mask, 'is_canceled'].mean()
+    df['segment_cancel_rate'] = (
+        df['market_segment'].map(segment_rates).fillna(global_rate)
+    )
     return df
 
 
-def add_deposit_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Create deposit and financial commitment features.
-
-    New columns:
-        has_deposit — any deposit type other than 'No Deposit'
+def add_special_requests_per_guest(df: pd.DataFrame) -> pd.DataFrame:
     """
-    df = df.copy()
+    Ratio of special requests to adult guests.
 
-    df['has_deposit'] = (df['deposit_type'] != 'No Deposit').astype(int)
-
+    No temporal concern — purely row-level arithmetic.
+    """
+    df['special_requests_per_guest'] = (
+        df['total_of_special_requests'] / df['adults'].replace(0, 1)
+    )
     return df
 
 
-# Combined feature engineering
+def add_weekend_ratio(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Proportion of stay nights that fall on weekends.
 
-def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Apply all feature engineering steps in the correct order.
+    No temporal concern — purely row-level arithmetic.
+    """
+    total = df['stays_in_weekend_nights'] + df['stays_in_week_nights']
+    df['weekend_ratio'] = np.where(
+        total > 0,
+        df['stays_in_weekend_nights'] / total,
+        0.0,
+    )
+    return df
 
-    This is the single entry point for all feature creation. It calls
-    each feature group function sequentially and returns the enriched
-    dataframe.
+
+def engineer_features(
+    df: pd.DataFrame,
+    split_year: int = SPLIT_YEAR,
+) -> pd.DataFrame:
+    """
+    Apply all feature engineering in one call.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Cleaned dataframe with leakage columns already removed
+        Full dataset (train + test combined).
+    split_year : int
+        Rows with arrival_date_year < this value are treated
+        as training data for any aggregation-based features.
 
     Returns
     -------
-    pd.DataFrame
-        Dataframe with all 9 engineered features added.
+    pd.DataFrame with new columns added.
     """
-    df = add_stay_features(df)
-    df = add_lead_time_features(df)
-    df = add_calendar_features(df)
-    df = add_booking_history_features(df)
-    df = add_price_features(df)
-    df = add_segment_features(df)
-    df = add_deposit_features(df)
+    df = df.copy()
+    df = add_room_type_mismatch(df)
+    df = add_adr_deviation_from_segment(df, split_year)
+    df = add_segment_cancel_rate(df, split_year)
+    df = add_special_requests_per_guest(df)
+    df = add_weekend_ratio(df)
+    return df
 
+def engineer_features_v2(
+    df: pd.DataFrame,
+    split_year: int = SPLIT_YEAR,
+) -> pd.DataFrame:
+    """
+    Apply all feature engineering in one call.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Full dataset (train + test combined).
+    split_year : int
+        Rows with arrival_date_year < this value are treated
+        as training data for any aggregation-based features.
+
+    Returns
+    -------
+    pd.DataFrame with new columns added.
+    """
+    df = df.copy()
+    df = add_room_type_mismatch(df)
+    df = add_adr_deviation_from_segment(df, split_year)
+    #df = add_segment_cancel_rate(df, split_year)
+    df = add_special_requests_per_guest(df)
+    df = add_weekend_ratio(df)
     return df

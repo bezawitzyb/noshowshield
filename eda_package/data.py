@@ -13,7 +13,7 @@ Usage:
     df = clean_data(df)
     train, test = temporal_split(df)
 """
-
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import datetime
@@ -21,21 +21,18 @@ from typing import Tuple
 from pathlib import Path
 from .registry import *
 
+
 def load_raw_data(path: str = None) -> pd.DataFrame:
     """
     Load the raw hotel bookings CSV.
-
-    Returns:
-        DataFrame with 119,390 rows × 32 columns (if unmodified Kaggle file).
     """
 
     if path is None:
-        # Use absolute path based on project root
-        project_root = Path(__file__).parent.parent
-        path = project_root / 'raw_data' / 'hotel_bookings.csv'
+        base_dir = Path(__file__).resolve().parents[1]
+        path = base_dir / "raw_data" / "hotel_bookings.csv"
+
     data = pd.read_csv(path)
     return data
-
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -63,8 +60,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def temporal_split(df: pd.DataFrame, arrival_date: str = "2017-01-01") -> Tuple[pd.DataFrame, pd.DataFrame]:
-
+def temporal_split(df: pd.DataFrame, split_year: int = SPLIT_YEAR) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Split data temporally:
 
@@ -73,37 +69,33 @@ def temporal_split(df: pd.DataFrame, arrival_date: str = "2017-01-01") -> Tuple[
 
     Input parameters:
         - df: dataframe with data
-        - arrival_year and arrival_month: determine the split between training and testing set
+        - split_year: rows before this year go to train, this year onward to test
 
     Returns:
         train, test
     """
-
-    split_date = pd.to_datetime(arrival_date) #'YYYY-MM-DD'
-
-    if "arrival_date" not in df.columns:
-        df = df.copy()
-        df["arrival_date"] = pd.to_datetime(
-            df["arrival_date_year"].astype(str) + "-" +
-            df["arrival_date_month"] + "-" +
-            df["arrival_date_day_of_month"].astype(str)
-        )
-
-    train = df[df["arrival_date"] < split_date].copy()
-    test = df[df["arrival_date"] >= split_date].copy()
+    train = df[df['arrival_date_year'] < split_year].copy()
+    test = df[df['arrival_date_year'] >= split_year].copy()
 
     return train, test
 
-def temporal_split_v2(df: pd.DataFrame, arrival_year: int, arrival_month: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def temporal_split_v2(df: pd.DataFrame, arrival_year: int, arrival_month: int):
     data = df.copy()
 
-    data['month_num'] = pd.to_datetime(data.arrival_date_month, format='%B').dt.month
+    month_num = pd.to_datetime(
+        data["arrival_date_month"], format="%B"
+    ).dt.month
 
-    mask = (data['arrival_date_year'] < arrival_year) | \
-            ((data['arrival_date_year'] == arrival_year) & (data['month_num'] < arrival_month))
+    mask = (
+        (data["arrival_date_year"] < arrival_year) |
+        (
+            (data["arrival_date_year"] == arrival_year) &
+            (month_num < arrival_month)
+        )
+    )
 
-    training_set = data[mask]
-    test_set = data[~mask]
+    training_set = data[mask].copy()
+    test_set = data[~mask].copy()
 
     return training_set, test_set
 
