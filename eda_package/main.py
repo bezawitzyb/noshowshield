@@ -1,6 +1,10 @@
+from pathlib import Path
+import pickle
+
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, roc_auc_score
+
 from .data import load_raw_data, clean_data, temporal_split_v2, split_X_y
 from .features import engineer_features_v2
 from .preprocessor import (
@@ -11,7 +15,6 @@ from .preprocessor import (
     group_countries
 )
 from .registry import ORDINAL_FEATURES_MAP, COUNTRY_LIMIT
-from .features import add_segment_cancel_rate
 
 def train():
     """
