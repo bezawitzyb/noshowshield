@@ -44,6 +44,7 @@ class BookingPredictor():
             self.load_model(file_name=file_name)
 
     def train_model(self, X_train_processed, y_train):
+
         parameters = {
             'n_estimators': 100, #100, 300
             'max_depth': 3, #3, 10
