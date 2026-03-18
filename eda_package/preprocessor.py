@@ -20,6 +20,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import RobustScaler, OneHotEncoder, OrdinalEncoder
 from .registry import *
 
+
 def group_countries(
     df:pd.DataFrame,
     limit:int
