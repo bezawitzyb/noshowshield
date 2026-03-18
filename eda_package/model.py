@@ -19,13 +19,18 @@ import pickle
 from eda_package.data import load_raw_data, clean_data, temporal_split_v2, temporal_split, split_X_y
 from eda_package.features import engineer_features
 from eda_package.preprocessor import (
+from .data import load_raw_data, clean_data, temporal_split_v2, temporal_split, split_X_y
+from .features import engineer_features
+from .preprocessor import (
     group_countries,
     get_feature_lists,
     create_preprocessor,
     fit_transform_preprocessor,
-    transform_preprocessor
+    transform_preprocessor,
+    preprocess_pipeline
 )
 from eda_package.registry import ORDINAL_FEATURES_MAP, COUNTRY_LIMIT, WORKING_MODEL_FILE_NAME
+from .registry import ORDINAL_FEATURES_MAP, COUNTRY_LIMIT
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_validate
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
