@@ -144,6 +144,27 @@ def the_brain():
     print(f'Precision: {round(precision_score(y_test, y_predicted),2)}')
     print(f'F1 score: {round(f1_score(y_test, y_predicted),2)}')
 
+
+def train_model():
+    df = load_raw_data()
+    df = clean_data(df)
+    df = group_countries(df, COUNTRY_LIMIT)
+    df = engineer_features(df)
+
+    training_set, test_set = temporal_split(df, "2017-03-01")
+
+    X_train, y_train = split_X_y(training_set)
+    X_test, y_test = split_X_y(test_set)
+
+    feature_lists = get_feature_lists(X_train, ORDINAL_FEATURES_MAP)
+    preprocessor = create_preprocessor(feature_lists, ORDINAL_FEATURES_MAP)
+
+    X_train_processed = fit_transform_preprocessor(X_train, preprocessor)
+
+    model = LogisticRegression(max_iter=1000, random_state=42)
+    model.fit(X_train_processed, y_train)
+
+    return model, preprocessor
 class SimpleModelPipeline:
     def __init__(
         self,

@@ -18,7 +18,9 @@ import pandas as pd
 import numpy as np
 import datetime
 from typing import Tuple
+from pathlib import Path
 from .registry import *
+import json
 
 
 def load_raw_data(path: str = None) -> pd.DataFrame:
@@ -116,3 +118,45 @@ def split_X_y(df: pd.DataFrame):
     y = df["is_canceled"]
 
     return X, y
+
+def row_to_api_json(row_index_test_set: int = 0) -> str:
+    """
+    Convert a row from the test set into a valid JSON payload
+    for the FastAPI /predict endpoint.
+
+    Parameters
+    ----------
+    row_index_test_set : int
+        Index of the row within the test set.
+    """
+
+    # Start position of test set
+    position = 61840 + 1  # end of train set + 1
+
+    # Load data
+    df = load_raw_data()
+
+    # Select test row
+    row = df.iloc[position + row_index_test_set, :]
+
+    # Columns that must never be sent to the API
+    drop_cols = [
+        "is_canceled",
+        "reservation_status",
+        "reservation_status_date"
+    ]
+
+    # Remove leakage columns
+    row = row.drop(labels=drop_cols, errors="ignore")
+
+    # Convert to dictionary
+    data = row.to_dict()
+
+    # Convert NaN → None
+    data = {
+        k: (None if pd.isna(v) else v)
+        for k, v in data.items()
+    }
+
+    # Return JSON string
+    return json.dumps(data)
