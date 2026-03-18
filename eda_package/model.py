@@ -20,6 +20,7 @@ import pandas as pd
 import numpy as np
 import pickle
 from .registry import *
+from pathlib import Path #for file handling
 from eda_package import *
 from eda_package.data import load_raw_data, clean_data, temporal_split_v2, temporal_split, split_X_y
 from eda_package.features import engineer_features
@@ -43,6 +44,9 @@ from xgboost import XGBClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from datetime import datetime
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL_PATH = BASE_DIR / "models" / "working_model.pkl"
+
 class BookingPredictor():
 
     def __init__(self,
@@ -52,6 +56,7 @@ class BookingPredictor():
 
         if X_train_processed is not None and y_train is not None:
             self.train_model(X_train_processed, y_train)
+            #add: save model to file_name if provided
         else:
             self.load_model(file_name=file_name)
 
@@ -75,7 +80,6 @@ class BookingPredictor():
         self.model = XGBClassifier(**parameters)
         self.model.fit(X_train_processed,y_train)
 
-
     def test(self, X_test_processed, y_test):
 
         print('Testing', type(self.model))
@@ -92,6 +96,10 @@ class BookingPredictor():
 
         return self.model.predict(X_processed)
 
+    def predict_proba(self, X_processed):
+
+        return self.model.predict_proba(X_processed)
+
     def save_model(self, file_name: str = None):
 
         if file_name is None:
@@ -101,15 +109,20 @@ class BookingPredictor():
         #print('Saving: ', url)
         pickle.dump(self.model, open(url, 'wb'))
 
-    def load_model(self, file_name: str):
+    def load_model(self, file_name: str = None):
 
         if file_name is None:
             file_name = WORKING_MODEL_FILE_NAME
 
-        self.model = XGBClassifier()
-        url = '../models/' + file_name
-        #print('Loading: ', url)
-        self.model = pickle.load(open(url, 'rb'))
+#        self.model = XGBClassifier()
+        # url = '../models/' + file_name
+        # #print('Loading: ', url)
+        # #self.model = pickle.load(open(url, 'rb'))
+        model_path = Path(__file__).resolve().parent.parent / "models" / file_name
+        with open(model_path, "rb") as f:
+            self.model = pickle.load(f)
+
+
 
 def the_brain():
     df = load_raw_data()
@@ -146,6 +159,26 @@ def the_brain():
     print(f'F1 score: {round(f1_score(y_test, y_predicted),2)}')
 
 
+def train_model():
+    df = load_raw_data()
+    df = clean_data(df)
+    df = group_countries(df, COUNTRY_LIMIT)
+    df = engineer_features(df)
+
+    training_set, test_set = temporal_split(df, "2017-03-01")
+
+    X_train, y_train = split_X_y(training_set)
+    X_test, y_test = split_X_y(test_set)
+
+    feature_lists = get_feature_lists(X_train, ORDINAL_FEATURES_MAP)
+    preprocessor = create_preprocessor(feature_lists, ORDINAL_FEATURES_MAP)
+
+    X_train_processed = fit_transform_preprocessor(X_train, preprocessor)
+
+    model = LogisticRegression(max_iter=1000, random_state=42)
+    model.fit(X_train_processed, y_train)
+
+    return model, preprocessor
 
 
 class SimpleModelPipeline:
@@ -247,7 +280,7 @@ class SimpleModelPipeline:
         X_train = X_train.drop(columns=[c for c in drop_cols if c in X_train.columns])
         X_test = X_test.drop(columns=[c for c in drop_cols if c in X_test.columns])
 
-        X_train_processed, X_test_processed = preprocess_pipeline(
+        X_train_processed, X_test_processed, _ = preprocess_pipeline(
             X_train, X_test, self.ordinal_features_map
         )
         return X_train_processed, X_test_processed, y_train, y_test
