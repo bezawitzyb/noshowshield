@@ -78,16 +78,23 @@ def temporal_split(df: pd.DataFrame, split_year: int = SPLIT_YEAR) -> Tuple[pd.D
 
     return train, test
 
-def temporal_split_v2(df: pd.DataFrame, arrival_year: int, arrival_month: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def temporal_split_v2(df: pd.DataFrame, arrival_year: int, arrival_month: int):
     data = df.copy()
 
-    data['month_num'] = pd.to_datetime(data.arrival_date_month, format='%B').dt.month
+    month_num = pd.to_datetime(
+        data["arrival_date_month"], format="%B"
+    ).dt.month
 
-    mask = (data['arrival_date_year'] < arrival_year) | \
-            ((data['arrival_date_year'] == arrival_year) & (data['month_num'] < arrival_month))
+    mask = (
+        (data["arrival_date_year"] < arrival_year) |
+        (
+            (data["arrival_date_year"] == arrival_year) &
+            (month_num < arrival_month)
+        )
+    )
 
-    training_set = data[mask]
-    test_set = data[~mask]
+    training_set = data[mask].copy()
+    test_set = data[~mask].copy()
 
     return training_set, test_set
 

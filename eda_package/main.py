@@ -1,8 +1,8 @@
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score, roc_auc_score
-from .data import load_raw_data, clean_data, temporal_split, split_X_y
-from .features import engineer_features
+from .data import load_raw_data, clean_data, temporal_split_v2, split_X_y
+from .features import engineer_features_v2
 from .preprocessor import (
     get_feature_lists,
     create_preprocessor,
@@ -11,6 +11,7 @@ from .preprocessor import (
     group_countries
 )
 from .registry import ORDINAL_FEATURES_MAP, COUNTRY_LIMIT
+from .features import add_segment_cancel_rate
 
 def train():
     """
@@ -19,9 +20,9 @@ def train():
     df = load_raw_data()
     df = clean_data(df)
     df = group_countries(df, COUNTRY_LIMIT)
-    df = engineer_features(df)
+    df = engineer_features_v2(df)
 
-    training_set, test_set = temporal_split(df, "2017-03-01")
+    training_set, test_set = temporal_split_v2(df, 2017, 3)
 
     X_train, y_train = split_X_y(training_set)
     X_test, y_test = split_X_y(test_set)
@@ -32,7 +33,7 @@ def train():
     X_train_processed = fit_transform_preprocessor(X_train, preprocessor)
     X_test_processed = transform_preprocessor(X_test, preprocessor)
 
-    model = LogisticRegression(max_iter=1000, random_state=42)
+    model = LogisticRegression(max_iter=3000, random_state=42)
     model.fit(X_train_processed, y_train)
 
     y_pred = model.predict(X_test_processed)
@@ -58,7 +59,7 @@ def pred(X_pred: pd.DataFrame):
     model, preprocessor, _ = train()
 
     X_pred = group_countries(X_pred, COUNTRY_LIMIT)
-    X_pred = engineer_features(X_pred)
+    X_pred = engineer_features_v2(X_pred)
     X_pred_processed = transform_preprocessor(X_pred, preprocessor)
 
     y_pred = model.predict(X_pred_processed)
