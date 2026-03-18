@@ -55,15 +55,6 @@ def predict(data: BookingInput):
     return pred(X_pred)
 
 
-
-# PRELIM Load model and preprocessor at startup
-#model, preprocessor = train_model()
-
-# Preload the model to accelerate the predictions
-# app.state.model = load_model()
-# Preload the preprocessor to accelerate the predictions
-# app.state.preprocessor = load_preprocessor()
-
 # Endpoint for root
 @app.get("/")
 def root():

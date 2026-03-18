@@ -18,6 +18,7 @@ import os
 import joblib
 import pandas as pd
 import pickle
+from pathlib import Path #for file handling
 from eda_package import *
 from eda_package.data import load_raw_data, clean_data, temporal_split_v2, temporal_split, split_X_y
 from eda_package.features import engineer_features
@@ -41,6 +42,9 @@ from xgboost import XGBClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from datetime import datetime
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL_PATH = BASE_DIR / "models" / "working_model.pkl"
+
 class BookingPredictor():
 
     def __init__(self,
@@ -50,6 +54,7 @@ class BookingPredictor():
 
         if X_train_processed is not None and y_train is not None:
             self.train_model(X_train_processed, y_train)
+            #add: save model to file_name if provided
         else:
             self.load_model(file_name=file_name)
 
@@ -89,6 +94,10 @@ class BookingPredictor():
 
         return self.model.predict(X_processed)
 
+    def predict_proba(self, X_processed):
+
+        return self.model.predict_proba(X_processed)
+
     def save_model(self, file_name: str = None):
 
         if file_name is None:
@@ -104,9 +113,12 @@ class BookingPredictor():
             file_name = WORKING_MODEL_FILE_NAME
 
 #        self.model = XGBClassifier()
-        url = '../models/' + file_name
-        #print('Loading: ', url)
-        self.model = pickle.load(open(url, 'rb'))
+        # url = '../models/' + file_name
+        # #print('Loading: ', url)
+        # #self.model = pickle.load(open(url, 'rb'))
+        model_path = Path(__file__).resolve().parent.parent / "models" / file_name
+        with open(model_path, "rb") as f:
+            self.model = pickle.load(f)
 
 
 
@@ -197,11 +209,11 @@ class SimpleModelPipeline:
         X_train, y_train = split_X_y(train)
         X_test, y_test = split_X_y(test)
 
-        X_train_processed, X_test_processed = preprocess_pipeline(
+        X_train_processed, X_test_processed, preprocessor = preprocess_pipeline(
             X_train, X_test, self.ordinal_features_map
         )
 
-        return X_train_processed, X_test_processed, y_train, y_test
+        return X_train_processed, X_test_processed, y_train, y_test, preprocessor
 
     # -----------------------------
     # Model Training
