@@ -15,13 +15,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.get("/")
 def root():
     return {
         "message": "NoShowShield API is running!"
     }
-
 
 @app.get("/predict")
 def predict(
