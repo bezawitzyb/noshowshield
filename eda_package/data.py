@@ -59,8 +59,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-def temporal_split(df: pd.DataFrame, arrival_date: str = "2017-01-01") -> Tuple[pd.DataFrame, pd.DataFrame]:
-
+def temporal_split(df: pd.DataFrame, split_year: int = SPLIT_YEAR) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Split data temporally:
 
@@ -69,24 +68,13 @@ def temporal_split(df: pd.DataFrame, arrival_date: str = "2017-01-01") -> Tuple[
 
     Input parameters:
         - df: dataframe with data
-        - arrival_year and arrival_month: determine the split between training and testing set
+        - split_year: rows before this year go to train, this year onward to test
 
     Returns:
         train, test
     """
-
-    split_date = pd.to_datetime(arrival_date) #'YYYY-MM-DD'
-
-    if "arrival_date" not in df.columns:
-        df = df.copy()
-        df["arrival_date"] = pd.to_datetime(
-            df["arrival_date_year"].astype(str) + "-" +
-            df["arrival_date_month"] + "-" +
-            df["arrival_date_day_of_month"].astype(str)
-        )
-
-    train = df[df["arrival_date"] < split_date].copy()
-    test = df[df["arrival_date"] >= split_date].copy()
+    train = df[df['arrival_date_year'] < split_year].copy()
+    test = df[df['arrival_date_year'] >= split_year].copy()
 
     return train, test
 
