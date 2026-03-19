@@ -1,7 +1,12 @@
 import streamlit as st
 import pandas as pd
+from pathlib import Path
 
 from eda_package import *
+
+
+
+BASE_DIR = Path(__file__).resolve().parent
 
 
 
@@ -38,7 +43,8 @@ def load_pipeline_and_results(relocation_cost, max_risk):
         max_risk=max_risk
     )
 
-    results = pipe.run_from_saved_model("/Users/beza/code/bezawitzyb/noshowshield/models/simple_logistic_model_20260318_131522.joblib")
+    model_path = BASE_DIR / "models" / "simple_logistic_model_20260318_131522.joblib"
+    results = pipe.run_from_saved_model(str(model_path))
 
     return pipe, results
 
