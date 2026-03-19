@@ -21,7 +21,8 @@ from typing import Tuple
 from pathlib import Path
 from .registry import *
 import json
-
+from sklearn.model_selection import train_test_split
+import pandas as pd
 
 def load_raw_data(path: str = None) -> pd.DataFrame:
     """
@@ -65,6 +66,18 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 def split_data():
     pass
 
+def split_data(df):
+    X = df.drop(columns="is_canceled")
+    y = df["is_canceled"]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+        stratify=y
+    )
+
+    return X_train, X_test, y_train, y_test
 
 def temporal_split(df: pd.DataFrame, split_year: int = SPLIT_YEAR) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """

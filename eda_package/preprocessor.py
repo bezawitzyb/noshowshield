@@ -199,4 +199,4 @@ def preprocess_pipeline(X_train: pd.DataFrame, X_test: pd.DataFrame, ordinal_fea
     # 4 ── Transform test (no fitting)
     X_test_processed = transform_preprocessor(X_test, preprocessor)
 
-    return X_train_processed, X_test_processed
+    return X_train_processed, X_test_processed, preprocessor
