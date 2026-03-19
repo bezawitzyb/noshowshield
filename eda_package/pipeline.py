@@ -100,9 +100,15 @@ def run_from_saved_model(
         capacity_map=capacity_map,
     )
 
+    # 11 collect model metadata for display
+    model = model_manager.model
+    model_info = {
+        "model_type": type(model).__name__,
+        "model_params": model.get_params(),
+    }
+
     return {
-        "model": model_manager.model,
+        "model_info": model_info,
         "metrics": metrics,
         "recommendations": recommendations,
-        "optimizer": optimizer,
     }

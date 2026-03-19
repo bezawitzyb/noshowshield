@@ -58,12 +58,14 @@ def load_results(relocation_cost: float, max_risk: float):
 results = load_results(relocation_cost, max_risk)
 recs = results["recommendations"]
 metrics = results["metrics"]
+model_info = results["model_info"]
 
 st.caption(
     f"Relocation cost = €{relocation_cost:.0f}  ·  "
     f"Max risk = {max_risk * 100:.1f}%  ·  "
     f"Model AUC = {metrics.get('auc', '—')}"
 )
+
 
 # ------------------------------------------------------------------
 # sidebar — filters
@@ -75,6 +77,24 @@ selected_date = st.sidebar.selectbox("Select date", available_dates)
 
 available_rooms = sorted(recs["assigned_room_type"].unique())
 selected_room = st.sidebar.selectbox("Select room type", available_rooms)
+
+# ------------------------------------------------------------------
+# sidebar — model & evaluation metrics
+# ------------------------------------------------------------------
+st.sidebar.header("Model Info")
+st.sidebar.caption(model_info["model_type"])
+
+metrics_df = pd.DataFrame(
+    {"Metric": list(metrics.keys()), "Score": list(metrics.values())}
+).set_index("Metric")
+st.sidebar.table(metrics_df)
+
+# with st.sidebar.expander("Hyperparameters"):
+#     params_df = pd.DataFrame(
+#         {"Parameter": list(model_info["model_params"].keys()),
+#          "Value": [str(v) for v in model_info["model_params"].values()]}
+#     ).set_index("Parameter")
+#     st.table(params_df)
 
 # ------------------------------------------------------------------
 # filter
