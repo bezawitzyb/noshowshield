@@ -140,7 +140,7 @@ def engineer_features(
     df = df.copy()
     df = add_room_type_mismatch(df)
     df = add_adr_deviation_from_segment(df, split_year)
-    df = add_segment_cancel_rate(df, split_year)
+#    df = add_segment_cancel_rate(df, split_year)
     df = add_special_requests_per_guest(df)
     df = add_weekend_ratio(df)
     return df

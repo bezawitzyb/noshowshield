@@ -61,6 +61,11 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+
+def split_data():
+    pass
+
+
 def temporal_split(df: pd.DataFrame, split_year: int = SPLIT_YEAR) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Split data temporally:
