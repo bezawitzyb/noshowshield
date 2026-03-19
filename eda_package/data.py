@@ -63,8 +63,6 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def split_data():
-    pass
 
 def split_data(df):
     X = df.drop(columns="is_canceled")
