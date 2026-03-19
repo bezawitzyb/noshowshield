@@ -199,7 +199,7 @@ class SimpleModelPipeline:
 
     def __init__(
         self,
-        path: str = "/Users/beza/code/bezawitzyb/noshowshield/raw_data/hotel_bookings.csv",
+        path: str = str(BASE_DIR / "raw_data" / "hotel_bookings.csv"),
         country_limit: int = COUNTRY_LIMIT,
         split_year: int = SPLIT_YEAR,
         ordinal_features_map: dict = None,
@@ -241,19 +241,19 @@ class SimpleModelPipeline:
 
     def _infer_capacity(self, df: pd.DataFrame) -> dict:
         """
-        Infer physical room capacity per room type from the data.
-
-        Strategy: for each room type, take the maximum number of
-        bookings observed on any single arrival date.  This is a
-        reasonable proxy when real capacity isn't provided.
+        Count only bookings that actually showed up (is_canceled == 0).
+        The max show-ups on any date is a tight lower bound on true capacity.
         """
+        showed_up = df[df["is_canceled"] == 0]
+
         counts = (
-            df.groupby(["arrival_date", "assigned_room_type"])
+            showed_up
+            .groupby(["arrival_date", "assigned_room_type"])
             .size()
-            .reset_index(name="n_bookings")
+            .reset_index(name="n_showups")
         )
         capacity = (
-            counts.groupby("assigned_room_type")["n_bookings"]
+            counts.groupby("assigned_room_type")["n_showups"]
             .max()
             .to_dict()
         )
