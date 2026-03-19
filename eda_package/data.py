@@ -17,6 +17,11 @@ Usage:
     df = data_manager.prepare_dataset()
     X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
 
+    dm = DataManager()
+    dm.X_train
+    dm.X_test
+    dm.df
+
 """
 
 from pathlib import Path
@@ -37,7 +42,11 @@ class DataManager:
     def __init__(
         self,
         raw_data_path: Optional[str] = None,
-        country_limit: int = COUNTRY_LIMIT
+        country_limit: int = COUNTRY_LIMIT,
+        target_col: str = "is_canceled",
+        test_size: float = 0.2,
+        random_state: int = 42,
+        stratify: bool = True
     ):
         if raw_data_path is None:
             self.raw_data_path = (
@@ -51,6 +60,18 @@ class DataManager:
         self.country_limit = country_limit
         self._raw_df: Optional[pd.DataFrame] = None
         self._clean_df: Optional[pd.DataFrame] = None
+
+        self.load_raw_data()
+        self.clean_data()
+        self._clean_df = self.group_countries(self._clean_df)
+        self.X_train, self.X_test, self.y_train, self.y_test = self.split_data(
+            df=self._clean_df,
+            target_col=target_col,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=stratify
+        )
+
 
     def load_raw_data(self, force_reload: bool = False) -> pd.DataFrame:
         """
@@ -128,7 +149,11 @@ class DataManager:
         """
         Split dataframe into train/test sets using train_test_split.
         """
-        X = df.drop(columns=target_col)
+        drop_cols = LEAKY_COLS
+        if target_col not in drop_cols:
+            drop_cols.append(target_col)
+#        X = df.drop(columns=target_col)
+        X = df.drop(columns=LEAKY_COLS)
         y = df[target_col]
 
         X_train, X_test, y_train, y_test = train_test_split(
