@@ -34,7 +34,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import RobustScaler, OneHotEncoder, OrdinalEncoder
 
-from .registry import ORDINAL_FEATURES_MAP
+from .registry import ORDINAL_FEATURES_MAP, RELEVANT_FEATURES
 
 
 class PreprocessorManager:
@@ -182,10 +182,31 @@ class PreprocessorManager:
         self.fit(X_train)
         return self.transform(X_train)
 
-    def prepare_train_test(
+    def filter_features(
         self,
         X_train: pd.DataFrame,
         X_test: pd.DataFrame
+    ):
+        features_to_include = RELEVANT_FEATURES
+        features_to_drop = []
+        print('filtering: ', X_train.shape)
+
+        for column in X_train:
+            if column not in features_to_include:
+                features_to_drop.append(column)
+
+        X_train = X_train.drop(columns=features_to_drop)
+        X_test = X_test.drop(columns=features_to_drop)
+
+        print('filtered: ', X_train.shape)
+
+        return X_train, X_test
+
+    def prepare_train_test(
+        self,
+        X_train: pd.DataFrame,
+        X_test: pd.DataFrame,
+        filter_freatures: bool = False
     ):
         """
         Final convenience method:
@@ -199,6 +220,9 @@ class PreprocessorManager:
         """
         X_train_processed = self.fit_transform(X_train)
         X_test_processed = self.transform(X_test)
+
+        if self.filter_features:
+            X_train_processed, X_test_processed = self.filter_features(X_train_processed, X_test_processed)
 
         return X_train_processed, X_test_processed, self.preprocessor
 
