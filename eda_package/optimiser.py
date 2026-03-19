@@ -75,19 +75,25 @@ class OverbookingOptimizer:
     ) -> Dict:
         """
         Infer room capacity from historical data.
+        Count only bookings that actually showed up (is_canceled == 0).
+        The maximum observed show-ups on any single date is used as a
+        tight lower bound on true physical capacity.
 
         Strategy:
         For each room type, take the maximum number of bookings observed
         on any single arrival date.
         """
+        showed_up = df[df["is_canceled"] == 0].copy()
+
         counts = (
-            df.groupby([date_col, room_col])
+            showed_up
+            .groupby([date_col, room_col])
             .size()
-            .reset_index(name="n_bookings")
+            .reset_index(name="n_showups")
         )
 
         capacity_map = (
-            counts.groupby(room_col)["n_bookings"]
+            counts.groupby(room_col)["n_showups"]
             .max()
             .to_dict()
         )

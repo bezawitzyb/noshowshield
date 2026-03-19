@@ -32,46 +32,6 @@ from .registry import LEAKY_COLS, COUNTRY_LIMIT
 class DataManager:
     """
     Central class for loading, cleaning, preparing, and splitting hotel booking data.
-    This function takes in a dataframe and performs the following cleaning steps:
-    1. Remove duplicates
-    2. Convert reservation_status_date to datetime format
-    3. Set missing values for agent, children and company to 0
-    4. Impute rows with missing values in the country column with 'Other'
-    """
-
-    df = df.copy() # Create a copy of the original dataframe to avoid modifying it directly (to avoid warnings)
-    #Remove duplicates
-    df = df.drop_duplicates()
-    #datetime format for reservation_status_date
-    df['reservation_status_date'] = pd.to_datetime(df['reservation_status_date'])
-    #Set missing value for agent, children and company to 0
-    df['agent'] = df['agent'].fillna(0)
-    df['children'] = df['children'].fillna(0)
-    df['company'] = df['company'].fillna(0)
-    #Impute rows with missing values in the country column with 'Other'
-    df['country'] = df['country'].fillna('Other')
-
-    #Are there other data types that need to be changed or rows to be dropped?
-    #Consider dropping some of the columns?
-
-    return df
-
-
-
-def split_data(df):
-    X = df.drop(columns="is_canceled")
-    y = df["is_canceled"]
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=0.2,
-        random_state=42,
-        stratify=y
-    )
-
-    return X_train, X_test, y_train, y_test
-
-def temporal_split(df: pd.DataFrame, split_year: int = SPLIT_YEAR) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
 
     def __init__(
