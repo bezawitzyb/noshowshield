@@ -5,8 +5,10 @@ import pandas as pd
 
 from eda_package.data import DataManager
 from eda_package.features import FeatureEngineer
+from eda_package.pipeline import run_from_saved_model
 from eda_package.preprocessor import PreprocessorManager
 from eda_package.model import ModelManager
+from eda_package.registry import WORKING_MODEL_FILE_NAME
 
 
 # --- Instantiate once (shared across app) ---
@@ -107,3 +109,28 @@ def predict(booking: BookingInput):
         "prediction": int(y_pred[0]),
         "cancellation_probability": float(y_prob[0]),
     }
+
+
+
+
+@app.get("/optimise")
+def optimise(
+    relocation_cost: float,
+    max_risk: float
+)-> dict:
+
+    user_input = {
+        "relocation_cost": relocation_cost,
+        "max_risk": max_risk,
+        "max_extra_sweep": 500,
+        "model_file_name": WORKING_MODEL_FILE_NAME,
+        "preprocessor_file_name": "preprocessor.joblib",
+    }
+
+    result = run_from_saved_model(**user_input)
+    result["recommendations"] = result["recommendations"].to_dict('records')
+
+    return result
+
+# For local testing:
+# uvicorn api.fast:app --host 0.0.0.0 --port 8000

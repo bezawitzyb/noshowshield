@@ -5,3 +5,4 @@ from .model import *
 from .explainer import *
 from .optimiser import *
 from .registry import *
+from .pipeline import *
