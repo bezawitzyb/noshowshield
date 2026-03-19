@@ -1,127 +1,109 @@
-import pandas as pd
-import numpy as np
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from pydantic import BaseModel
 import pandas as pd
-from eda_package.model import train_model
-from eda_package.preprocessor import transform_preprocessor
 
-from eda_package.main import pred
+from eda_package.data import DataManager
+from eda_package.features import FeatureEngineer
+from eda_package.preprocessor import PreprocessorManager
+from eda_package.model import ModelManager
 
-#preprocessor_manager.load()
-#X_pred_processed = preprocessor_manager.transform(X_pred)
 
-app = FastAPI()
+# --- Instantiate once (shared across app) ---
+data_manager = DataManager()
+feature_engineer = FeatureEngineer()
+preprocessor_manager = PreprocessorManager()
+model_manager = ModelManager()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
+def train_artifacts_once():
+    """
+    Train preprocessor + model once if they do not exist yet.
+    """
+    X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
+
+    X_train = feature_engineer.engineer_features(X_train)
+    X_test = feature_engineer.engineer_features(X_test)
+
+    X_train_processed, X_test_processed, _ = preprocessor_manager.prepare_train_test(
+        X_train, X_test
+    )
+
+    model_manager.train(X_train_processed, y_train)
+
+    preprocessor_manager.save()
+    model_manager.save()
+
+
+# --- Lifespan handler ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # STARTUP
+    try:
+        preprocessor_manager.load()
+        model_manager.load()
+    except FileNotFoundError:
+        train_artifacts_once()
+
+    yield  # app runs here
+
+    # SHUTDOWN (optional cleanup if needed)
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+# --- Request schema ---
+class BookingInput(BaseModel):
+    hotel: str
+    lead_time: int
+    arrival_date_year: int
+    arrival_date_month: str
+    arrival_date_week_number: int
+    arrival_date_day_of_month: int
+    stays_in_weekend_nights: int
+    stays_in_week_nights: int
+    adults: int
+    children: float | int | None = 0
+    babies: int = 0
+    meal: str
+    country: str | None = None
+    market_segment: str
+    distribution_channel: str
+    is_repeated_guest: int
+    previous_cancellations: int
+    previous_bookings_not_canceled: int
+    reserved_room_type: str
+    assigned_room_type: str
+    booking_changes: int
+    deposit_type: str
+    agent: float | int | None = 0
+    company: float | int | None = 0
+    days_in_waiting_list: int
+    customer_type: str
+    adr: float
+    required_car_parking_spaces: int
+    total_of_special_requests: int
+
+
+# --- Routes ---
 @app.get("/")
 def root():
+    return {"status": "ok"}
+
+
+@app.post("/predict")
+def predict(booking: BookingInput):
+    X_pred = pd.DataFrame([booking.model_dump()])
+
+    X_pred = data_manager.group_countries(X_pred)
+    X_pred = feature_engineer.engineer_features(X_pred)
+    X_pred_processed = preprocessor_manager.transform(X_pred)
+
+    y_pred = model_manager.predict(X_pred_processed)
+    y_prob = model_manager.predict_proba(X_pred_processed)[:, 1]
+
     return {
-        "message": "NoShowShield API is running!"
+        "prediction": int(y_pred[0]),
+        "cancellation_probability": float(y_prob[0]),
     }
-
-@app.get("/predict")
-def predict(
-    hotel: str,
-    lead_time: int,
-    arrival_date_year: int,
-    arrival_date_month: str,
-    arrival_date_week_number: int,
-    arrival_date_day_of_month: int,
-    stays_in_weekend_nights: int,
-    stays_in_week_nights: int,
-    adults: int,
-    children: float,
-    babies: int,
-    meal: str,
-    country: str,
-    market_segment: str,
-    distribution_channel: str,
-    is_repeated_guest: int,
-    previous_cancellations: int,
-    previous_bookings_not_canceled: int,
-    reserved_room_type: str,
-    assigned_room_type: str,
-    booking_changes: int,
-    deposit_type: str,
-    agent: float,
-    company: float,
-    days_in_waiting_list: int,
-    customer_type: str,
-    adr: float,
-    required_car_parking_spaces: int,
-    total_of_special_requests: int
-):
-    # X_pred = pd.DataFrame([{
-    #     "hotel": hotel,
-    #     "lead_time": lead_time,
-    #     "arrival_date_year": arrival_date_year,
-    #     "arrival_date_month": arrival_date_month,
-    #     "arrival_date_week_number": arrival_date_week_number,
-    #     "arrival_date_day_of_month": arrival_date_day_of_month,
-    #     "stays_in_weekend_nights": stays_in_weekend_nights,
-    #     "stays_in_week_nights": stays_in_week_nights,
-    #     "adults": adults,
-    #     "children": children,
-    #     "babies": babies,
-    #     "meal": meal,
-    #     "country": country,
-    #     "market_segment": market_segment,
-    #     "distribution_channel": distribution_channel,
-    #     "is_repeated_guest": is_repeated_guest,
-    #     "previous_cancellations": previous_cancellations,
-    #     "previous_bookings_not_canceled": previous_bookings_not_canceled,
-    #     "reserved_room_type": reserved_room_type,
-    #     "assigned_room_type": assigned_room_type,
-    #     "booking_changes": booking_changes,
-    #     "deposit_type": deposit_type,
-    #     "agent": agent,
-    #     "company": company,
-    #     "days_in_waiting_list": days_in_waiting_list,
-    #     "customer_type": customer_type,
-    #     "adr": adr,
-    #     "required_car_parking_spaces": required_car_parking_spaces,
-    #     "total_of_special_requests": total_of_special_requests
-    # }])
-
-    X_pred = pd.DataFrame([{
-        "hotel": "City Hotel",
-        "lead_time": 112,
-        "arrival_date_year": 2016,
-        "arrival_date_month": "December",
-        "arrival_date_week_number": 53,
-        "arrival_date_day_of_month": 27,
-        "stays_in_weekend_nights": 0,
-        "stays_in_week_nights": 3,
-        "adults": 3,
-        "children": 0.0,
-        "babies": 0,
-        "meal": "BB",
-        "country": "PRT",
-        "market_segment": "Online TA",
-        "distribution_channel": "TA/TO",
-        "is_repeated_guest": 0,
-        "previous_cancellations": 0,
-        "previous_bookings_not_canceled": 0,
-        "reserved_room_type": "D",
-        "assigned_room_type": "D",
-        "booking_changes": 0,
-        "deposit_type": "No Deposit",
-        "agent": 83.0,
-        "company": np.nan,
-        "days_in_waiting_list": 0,
-        "customer_type": "Transient",
-        "adr": 131.13,
-        "required_car_parking_spaces": 0,
-        "total_of_special_requests": 0
-    }])
-
-    return pred(X_pred)
