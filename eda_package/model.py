@@ -51,15 +51,6 @@ class ModelManager:
         file_name: str = WORKING_MODEL_FILE_NAME,
         model=None,
         model_params: Optional[Dict] = None
-        path: str = str(BASE_DIR / "raw_data" / "hotel_bookings.csv"),
-        country_limit: int = COUNTRY_LIMIT,
-        split_year: int = SPLIT_YEAR,
-        ordinal_features_map: dict = None,
-        model_folder: str = "models",
-        random_state: int = 42,
-        relocation_cost: float = DEFAULT_RELOCATION_COST,
-        max_risk: float = DEFAULT_MAX_RISK,
-        max_extra_sweep: int = MAX_EXTRA_SWEEP,
     ):
         self.path = Path(__file__).resolve().parent.parent / "models" / file_name
         self.model = model
@@ -84,62 +75,6 @@ class ModelManager:
         Create the default XGBoost classification model.
         """
         self.model = XGBClassifier(**self.model_params)
-        Count only bookings that actually showed up (is_canceled == 0).
-        The max show-ups on any date is a tight lower bound on true capacity.
-        """
-        showed_up = df[df["is_canceled"] == 0]
-
-        counts = (
-            showed_up
-            .groupby(["arrival_date", "assigned_room_type"])
-            .size()
-            .reset_index(name="n_showups")
-        )
-        capacity = (
-            counts.groupby("assigned_room_type")["n_showups"]
-            .max()
-            .to_dict()
-        )
-        return capacity
-
-    def load_and_preprocess(self):
-        """Run the full data pipeline and return processed train/test arrays."""
-        df = load_raw_data(self.path)
-        df = clean_data(df)
-        df = group_countries(df, self.country_limit)
-        df = engineer_features(df)
-        df = self._build_arrival_date(df)
-
-        # Infer capacity from the FULL dataset (before splitting)
-        self.capacity_map = self._infer_capacity(df)
-
-        train, test = temporal_split(df, self.split_year)
-        self.test_df = test.copy()
-
-        X_train, y_train = split_X_y(train)
-        X_test, y_test = split_X_y(test)
-
-        # Drop columns that are only used for aggregation, not modelling
-        drop_cols = ["arrival_date"]
-        X_train = X_train.drop(columns=[c for c in drop_cols if c in X_train.columns])
-        X_test = X_test.drop(columns=[c for c in drop_cols if c in X_test.columns])
-
-        X_train_processed, X_test_processed, _ = preprocess_pipeline(
-            X_train, X_test, self.ordinal_features_map
-        )
-        return X_train_processed, X_test_processed, y_train, y_test
-
-    # ================================================================
-    #  2.  MODEL TRAINING
-    # ================================================================
-    def train(self, X_train, y_train):
-        base = LogisticRegression(
-            max_iter=500,
-            class_weight="balanced",
-            random_state=self.random_state,
-        )
-        self.model = CalibratedClassifierCV(base, method="sigmoid", cv=3)
-        self.model.fit(X_train, y_train)
         return self.model
 
     def train(self, X_train: pd.DataFrame, y_train: pd.Series):
