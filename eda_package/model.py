@@ -199,7 +199,7 @@ class SimpleModelPipeline:
 
     def __init__(
         self,
-        path: str = "/Users/beza/code/bezawitzyb/noshowshield/raw_data/hotel_bookings.csv",
+        path: str = str(BASE_DIR / "raw_data" / "hotel_bookings.csv"),
         country_limit: int = COUNTRY_LIMIT,
         split_year: int = SPLIT_YEAR,
         ordinal_features_map: dict = None,
