@@ -32,7 +32,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from .registry import LEAKY_COLS, COUNTRY_LIMIT
-
+from eda_package.features import FeatureEngineer
 
 class DataManager:
     """
@@ -46,7 +46,8 @@ class DataManager:
         target_col: str = "is_canceled",
         test_size: float = 0.2,
         random_state: int = 42,
-        stratify: bool = True
+        stratify: bool = True,
+        feature_engineer: FeatureEngineer = None
     ):
         if raw_data_path is None:
             self.raw_data_path = (
@@ -71,6 +72,10 @@ class DataManager:
             random_state=random_state,
             stratify=stratify
         )
+        if feature_engineer is not None:
+            self.X_train = feature_engineer.engineer_features(self.X_train)
+            self.X_test = feature_engineer.engineer_features(self.X_test)
+
 
 
     def load_raw_data(self, force_reload: bool = False) -> pd.DataFrame:
@@ -152,8 +157,8 @@ class DataManager:
         drop_cols = LEAKY_COLS
         if target_col not in drop_cols:
             drop_cols.append(target_col)
-#        X = df.drop(columns=target_col)
-        X = df.drop(columns=LEAKY_COLS)
+        X = df.drop(columns=target_col)
+#        X = df.drop(columns=LEAKY_COLS)
         y = df[target_col]
 
         X_train, X_test, y_train, y_test = train_test_split(
