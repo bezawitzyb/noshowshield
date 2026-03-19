@@ -7,29 +7,28 @@ Responsibilities:
     - Aggregate booking-level cancellation probabilities
     - Find the optimal number of extra bookings to accept
     - Compute financial impact (revenue vs relocation cost)
+    - Run full pipeline from a saved model
 
 Usage:
-    from eda_package.optimizer import OverbookingOptimizer
+    from eda_package.optimiser import OverbookingOptimizer
 
     optimizer = OverbookingOptimizer()
 
+    # --- Option A: manual step-by-step ---
     df_with_dates = optimizer.build_arrival_date(raw_df)
-    capacity_map = optimizer.infer_capacity(df_with_dates)
-
+    capacity_map  = optimizer.infer_capacity(df_with_dates)
     recommendations = optimizer.aggregate_and_recommend(
         raw_df=df_with_dates,
         cancel_probs=cancel_probs,
-        capacity_map=capacity_map
+        capacity_map=capacity_map,
     )
 
-    filtered = optimizer.get_recommendations(
-        recommendations,
-        dates=["2017-07-01"],
-        room_types=["A"]
-    )
+    # --- Option B: end-to-end from saved artefacts ---
+    results = optimizer.run_from_saved_model()
 """
 
 from typing import Optional, Dict, Sequence
+
 import numpy as np
 import pandas as pd
 
@@ -51,6 +50,10 @@ class OverbookingOptimizer:
         self.relocation_cost = relocation_cost
         self.max_risk = max_risk
         self.max_extra_sweep = max_extra_sweep
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
 
     def build_arrival_date(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -75,13 +78,10 @@ class OverbookingOptimizer:
     ) -> Dict:
         """
         Infer room capacity from historical data.
+
         Count only bookings that actually showed up (is_canceled == 0).
         The maximum observed show-ups on any single date is used as a
         tight lower bound on true physical capacity.
-
-        Strategy:
-        For each room type, take the maximum number of bookings observed
-        on any single arrival date.
         """
         showed_up = df[df["is_canceled"] == 0].copy()
 
@@ -100,19 +100,14 @@ class OverbookingOptimizer:
 
         return capacity_map
 
+    # ------------------------------------------------------------------
+    # Poisson-Binomial helpers
+    # ------------------------------------------------------------------
+
     @staticmethod
     def poisson_binomial_pmf(probs: Sequence[float]) -> np.ndarray:
         """
         Exact Poisson-Binomial PMF via dynamic programming.
-
-        Parameters
-        ----------
-        probs : sequence of probabilities
-
-        Returns
-        -------
-        np.ndarray
-            Probability mass function for k = 0 ... n
         """
         probs = np.asarray(probs, dtype=np.float64)
         n = len(probs)
@@ -138,6 +133,10 @@ class OverbookingOptimizer:
         var = (probs * (1 - probs)).sum()
         return mean, var
 
+    # ------------------------------------------------------------------
+    # single-group optimisation
+    # ------------------------------------------------------------------
+
     def optimise_group(
         self,
         cancel_probs: Sequence[float],
@@ -145,14 +144,7 @@ class OverbookingOptimizer:
         mean_adr: float,
     ) -> dict:
         """
-        Find the best extra-booking level for one group.
-
-        For each extra-booking candidate:
-        - estimate show-up distribution
-        - compute relocation probability
-        - compute expected relocation cost
-        - compute expected additional revenue
-        - maximize net benefit subject to max_risk
+        Find the best extra-booking level for one (date, room-type) group.
         """
         cancel_probs = np.asarray(cancel_probs, dtype=np.float64)
         n_current = len(cancel_probs)
@@ -209,6 +201,10 @@ class OverbookingOptimizer:
                 }
 
         return best
+
+    # ------------------------------------------------------------------
+    # aggregate across all groups
+    # ------------------------------------------------------------------
 
     def aggregate_and_recommend(
         self,
@@ -298,6 +294,10 @@ class OverbookingOptimizer:
 
         return result
 
+    # ------------------------------------------------------------------
+    # filtering helper
+    # ------------------------------------------------------------------
+
     def get_recommendations(
         self,
         recommendations: pd.DataFrame,
@@ -311,7 +311,6 @@ class OverbookingOptimizer:
         """
         if isinstance(dates, str):
             dates = [dates]
-
         if isinstance(room_types, str):
             room_types = [room_types]
 
@@ -323,3 +322,5 @@ class OverbookingOptimizer:
         ].reset_index(drop=True)
 
         return filtered
+
+    
