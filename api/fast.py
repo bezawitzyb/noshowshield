@@ -1,5 +1,5 @@
 import pandas as pd
-
+import numpy as np
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -8,6 +8,9 @@ from eda_package.model import train_model
 from eda_package.preprocessor import transform_preprocessor
 
 from eda_package.main import pred
+
+#preprocessor_manager.load()
+#X_pred_processed = preprocessor_manager.transform(X_pred)
 
 app = FastAPI()
 
