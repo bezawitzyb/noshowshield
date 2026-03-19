@@ -32,4 +32,9 @@ ENV PORT=8000
 EXPOSE 8000
 
 # Run the FastAPI app
-CMD ["uvicorn", "api.fast_copy:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD uvicorn api.fast_copy:app --host 0.0.0.0 --port $PORT
+
+#For docker run
+# docker run -e PORT=8000 -p 8080:8000 $GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$DOCKER_REPO_NAME/$DOCKER_IMAGE_NAME:0.1
+# http://localhost:8080/docs
+# make build push deploy
