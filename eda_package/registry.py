@@ -19,3 +19,5 @@ COUNTRY_LIMIT = 30
 SPLIT_YEAR = 2017
 
 WORKING_MODEL_FILE_NAME = 'working_model.pkl'
+
+WORKING_PREPROCESSOR_FILE_NAME = 'working_preprocessor.pkl'

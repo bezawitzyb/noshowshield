@@ -18,6 +18,7 @@ import os
 import joblib
 import pandas as pd
 import pickle
+import numpy as np
 from pathlib import Path #for file handling
 from eda_package import *
 from eda_package.data import load_raw_data, clean_data, temporal_split_v2, temporal_split, split_X_y
