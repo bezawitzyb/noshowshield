@@ -73,6 +73,78 @@ def load_and_preprocess():
 
     return X_train_processed, X_test_processed, y_train, y_test, preprocessor
 
+from pathlib import Path
+import pickle
+import pandas as pd
+
+class PreprocessedDataLoader:
+
+    def __init__(self, file_name: str = "preprocessed_data.pkl"):
+
+        #self.path = Path(__file__).resolve().parent.parent / "models" / file_name
+        self.path = Path("models") / file_name
+
+        if self.path.exists():
+            self.load()
+        else:
+            self.build()
+            self.save()
+
+    def build(self):
+
+        # Load + clean
+        df = load_raw_data()
+        df = clean_data(df)
+
+        # Feature engineering
+        df = group_countries(df, COUNTRY_LIMIT)
+        df = engineer_features_v2(df)
+
+        # Split data
+        X_train, X_test, y_train, y_test = split_data(df)
+
+        # Preprocessor
+        feature_lists = get_feature_lists(X_train, ORDINAL_FEATURES_MAP)
+        self.preprocessor = create_preprocessor(feature_lists, ORDINAL_FEATURES_MAP)
+
+        # Transform
+        self.X_train_processed = fit_transform_preprocessor(X_train, self.preprocessor)
+        self.X_test_processed = transform_preprocessor(X_test, self.preprocessor)
+
+        self.y_train = y_train
+        self.y_test = y_test
+
+    def save(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(self.path, "wb") as f:
+            pickle.dump({
+                "X_train_processed": self.X_train_processed,
+                "X_test_processed": self.X_test_processed,
+                "y_train": self.y_train,
+                "y_test": self.y_test,
+                "preprocessor": self.preprocessor
+            }, f)
+
+    def load(self):
+        with open(self.path, "rb") as f:
+            data = pickle.load(f)
+
+        self.X_train_processed = data["X_train_processed"]
+        self.X_test_processed = data["X_test_processed"]
+        self.y_train = data["y_train"]
+        self.y_test = data["y_test"]
+        self.preprocessor = data["preprocessor"]
+
+    def get_data(self):
+        return (
+            self.X_train_processed,
+            self.X_test_processed,
+            self.y_train,
+            self.y_test,
+            self.preprocessor
+        )
+
 def pred(X_pred: pd.DataFrame):
     """
     Make prediction on new booking data using trained model + fitted preprocessor.

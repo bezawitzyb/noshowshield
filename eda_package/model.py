@@ -19,6 +19,7 @@ import joblib
 import pandas as pd
 import numpy as np
 import pickle
+import numpy as np
 from .registry import *
 from pathlib import Path #for file handling
 from eda_package import *
