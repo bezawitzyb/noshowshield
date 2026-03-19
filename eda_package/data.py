@@ -1,43 +1,37 @@
 """
-NoShowShield — Data loading and cleaning
+NoShowShield — Data loading and preparation
 
 Responsibilities:
-    - Load raw CSV from Kaggle
-    - Drop duplicate columns and handle missing values
-    - Save/load processed files
+    - Load raw CSV
+    - Clean raw data
+    - Group rare countries into 'Other'
+    - Split data with train_test_split
+    - Separate features and target
+    - Export one row as API-ready JSON payload
 
 Usage:
-    from noshowshield.eda_package.data import load_raw_data, clean_data
+    from eda_package.registry import *
+    from eda_package.data import DataManager
 
-    df = load_raw_data()
-    df = clean_data(df)
-    train, test = temporal_split(df)
+    data_manager = DataManager()
+    df = data_manager.prepare_dataset()
+    X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
+
 """
+
 from pathlib import Path
-import pandas as pd
-import numpy as np
-import datetime
-from typing import Tuple
-from pathlib import Path
-from .registry import *
+from typing import Optional, Tuple
 import json
-from sklearn.model_selection import train_test_split
+
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
-def load_raw_data(path: str = None) -> pd.DataFrame:
+from .registry import LEAKY_COLS, COUNTRY_LIMIT
+
+
+class DataManager:
     """
-    Load the raw hotel bookings CSV.
-    """
-
-    if path is None:
-        base_dir = Path(__file__).resolve().parents[1]
-        path = base_dir / "raw_data" / "hotel_bookings.csv"
-
-    data = pd.read_csv(path)
-    return data
-
-def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    """
+    Central class for loading, cleaning, preparing, and splitting hotel booking data.
     This function takes in a dataframe and performs the following cleaning steps:
     1. Remove duplicates
     2. Convert reservation_status_date to datetime format
@@ -79,100 +73,178 @@ def split_data(df):
 
 def temporal_split(df: pd.DataFrame, split_year: int = SPLIT_YEAR) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Split data temporally:
 
-    This prevents data leakage from future bookings into the training set.
-    Default: train on 2015–2016, test on 2017.
+    def __init__(
+        self,
+        raw_data_path: Optional[str] = None,
+        country_limit: int = COUNTRY_LIMIT
+    ):
+        if raw_data_path is None:
+            self.raw_data_path = (
+                Path(__file__).resolve().parents[1]
+                / "raw_data"
+                / "hotel_bookings.csv"
+            )
+        else:
+            self.raw_data_path = Path(raw_data_path)
 
-    Input parameters:
-        - df: dataframe with data
-        - split_year: rows before this year go to train, this year onward to test
+        self.country_limit = country_limit
+        self._raw_df: Optional[pd.DataFrame] = None
+        self._clean_df: Optional[pd.DataFrame] = None
 
-    Returns:
-        train, test
-    """
-    train = df[df['arrival_date_year'] < split_year].copy()
-    test = df[df['arrival_date_year'] >= split_year].copy()
+    def load_raw_data(self, force_reload: bool = False) -> pd.DataFrame:
+        """
+        Load the raw hotel bookings CSV.
+        Cache it in memory unless force_reload=True.
+        """
+        if self._raw_df is None or force_reload:
+            self._raw_df = pd.read_csv(self.raw_data_path)
 
-    return train, test
+        return self._raw_df.copy()
 
-def temporal_split_v2(df: pd.DataFrame, arrival_year: int, arrival_month: int):
-    data = df.copy()
+    def clean_data(self, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+        """
+        Clean the dataset.
 
-    month_num = pd.to_datetime(
-        data["arrival_date_month"], format="%B"
-    ).dt.month
+        Steps:
+        1. Remove duplicates
+        2. Convert reservation_status_date to datetime
+        3. Fill missing values in agent, children, and company with 0
+        4. Fill missing values in country with 'Other'
+        """
+        if df is None:
+            if self._clean_df is not None:
+                return self._clean_df.copy()
+            df = self.load_raw_data()
 
-    mask = (
-        (data["arrival_date_year"] < arrival_year) |
-        (
-            (data["arrival_date_year"] == arrival_year) &
-            (month_num < arrival_month)
+        cleaned_df = df.copy()
+
+        cleaned_df = cleaned_df.drop_duplicates()
+        cleaned_df["reservation_status_date"] = pd.to_datetime(
+            cleaned_df["reservation_status_date"]
         )
-    )
+        cleaned_df["agent"] = cleaned_df["agent"].fillna(0)
+        cleaned_df["children"] = cleaned_df["children"].fillna(0)
+        cleaned_df["company"] = cleaned_df["company"].fillna(0)
+        cleaned_df["country"] = cleaned_df["country"].fillna("Other")
 
-    training_set = data[mask].copy()
-    test_set = data[~mask].copy()
+        self._clean_df = cleaned_df.copy()
 
-    return training_set, test_set
+        return cleaned_df
 
-def split_X_y(df: pd.DataFrame):
-    """
-    Separate features (X) and target (y) from a dataframe.
+    def group_countries(
+        self,
+        df: pd.DataFrame,
+        limit: Optional[int] = None
+    ) -> pd.DataFrame:
+        """
+        Group countries with fewer than `limit` entries into 'Other'.
 
-    Drops leaky columns: is_canceled, reservation_status, reservation_status_date.
+        Adds a new column called 'country_group'
+        and leaves the original 'country' column unchanged.
+        """
+        if limit is None:
+            limit = self.country_limit
 
-    Input parameters:
-        - df: dataframe with data
+        grouped_df = df.copy()
 
-    Returns:
-        X, y
-    """
-    drop_cols = LEAKY_COLS
+        country_counts = grouped_df["country"].value_counts()
+        countries_included = country_counts[country_counts >= limit].index
 
-    X = df.drop(columns=drop_cols)
-    y = df["is_canceled"]
+        grouped_df["country_group"] = grouped_df["country"].apply(
+            lambda x: x if x in countries_included else "Other"
+        )
 
-    return X, y
+        return grouped_df
 
-def row_to_api_json(row_index_test_set: int = 0) -> str:
-    """
-    Convert a row from the test set into a valid JSON payload
-    for the FastAPI /predict endpoint.
+    def split_data(
+        self,
+        df: pd.DataFrame,
+        target_col: str = "is_canceled",
+        test_size: float = 0.2,
+        random_state: int = 42,
+        stratify: bool = True
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+        """
+        Split dataframe into train/test sets using train_test_split.
+        """
+        X = df.drop(columns=target_col)
+        y = df[target_col]
 
-    Parameters
-    ----------
-    row_index_test_set : int
-        Index of the row within the test set.
-    """
+        X_train, X_test, y_train, y_test = train_test_split(
+            X,
+            y,
+            test_size=test_size,
+            random_state=random_state,
+        )
 
-    # Start position of test set
-    position = 61840 + 1  # end of train set + 1
+        return X_train, X_test, y_train, y_test
 
-    # Load data
-    df = load_raw_data()
+    def prepare_clean_data(self) -> pd.DataFrame:
+        """
+        Load and clean the raw dataset.
+        """
+        df = self.load_raw_data()
+        df = self.clean_data(df)
+        return df
 
-    # Select test row
-    row = df.iloc[position + row_index_test_set, :]
+    def prepare_dataset(self) -> pd.DataFrame:
+        """
+        Final convenience method for the data class.
 
-    # Columns that must never be sent to the API
-    drop_cols = [
-        "is_canceled",
-        "reservation_status",
-        "reservation_status_date"
-    ]
+        Runs:
+        1. load raw data
+        2. clean data
+        3. group countries
+        """
+        df = self.prepare_clean_data()
+        df = self.group_countries(df)
+        return df
 
-    # Remove leakage columns
-    row = row.drop(labels=drop_cols, errors="ignore")
+    def prepare_train_test_data(
+        self,
+        target_col: str = "is_canceled",
+        test_size: float = 0.2,
+        random_state: int = 42,
+        stratify: bool = True
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+        """
+        Full end-to-end data preparation for modeling.
 
-    # Convert to dictionary
-    data = row.to_dict()
+        Runs:
+        1. load raw data
+        2. clean data
+        3. group countries
+        4. split into train/test
+        """
+        df = self.prepare_dataset()
 
-    # Convert NaN → None
-    data = {
-        k: (None if pd.isna(v) else v)
-        for k, v in data.items()
-    }
+        X_train, X_test, y_train, y_test = self.split_data(
+            df=df,
+            target_col=target_col,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=stratify
+        )
 
-    # Return JSON string
-    return json.dumps(data)
+        return X_train, X_test, y_train, y_test
+
+    def row_to_api_json(self, row_index: int = 0) -> str:
+        """
+        Convert one row into a JSON payload suitable for the FastAPI /predict endpoint.
+        """
+        df = self.prepare_dataset()
+
+        if row_index >= len(df):
+            raise IndexError("row_index is out of range.")
+
+        row = df.iloc[row_index].copy()
+        row = row.drop(labels=LEAKY_COLS, errors="ignore")
+
+        data = row.to_dict()
+        data = {
+            key: (None if pd.isna(value) else value)
+            for key, value in data.items()
+        }
+
+        return json.dumps(data, default=str)

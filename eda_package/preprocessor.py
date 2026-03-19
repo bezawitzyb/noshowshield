@@ -1,202 +1,223 @@
 """
-NoShowShield — Sklearn preprocessing pipeline.
+NoShowShield — Sklearn preprocessing pipeline
 
 Responsibilities:
-    - Build a ColumnTransformer that scales numericals and encodes categoricals
-    - Consistent transformation between training and testing data
-    - Prevent data leakage: fit only on training data, transform on both
+    - Detect feature types
+    - Build a ColumnTransformer
+    - Fit on training data only
+    - Transform train/test/new data consistently
+    - Save and load fitted preprocessors
 
 Usage:
-    from noshowshield.eda_package.preprocessor import build_preprocessor
+    from eda_package.preprocessor import PreprocessorManager
 
-    preprocessor = build_preprocessor()
-    X_train_transformed = preprocessor.fit_transform(X_train)
-    X_test_transformed = preprocessor.transform(X_test)
+    preprocessor_manager = PreprocessorManager()
+
+    # Training
+    X_train_processed, X_test_processed, preprocessor = (
+        preprocessor_manager.prepare_train_test(X_train, X_test)
+    )
+    preprocessor_manager.save()
+
+    # Later for inference / API
+    preprocessor_manager.load()
+    X_pred_processed = preprocessor_manager.transform(X_pred)
 """
+
+from pathlib import Path
+from typing import Optional, Dict
+
+import joblib
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import RobustScaler, OneHotEncoder, OrdinalEncoder
-from .registry import *
+
+from .registry import ORDINAL_FEATURES_MAP
 
 
-def group_countries(
-    df:pd.DataFrame,
-    limit:int
-    )-> pd.DataFrame:
+class PreprocessorManager:
     """
-    This function takes in a dataframe and group countries with less then 'limit' entries in Other category
-    The function adds a new column called 'country_group' and leaves the 'country' column as-is
+    Central class for preprocessing tabular model inputs.
     """
-    df = df.copy()
 
-    country_counts = df['country'].value_counts()
-    countries_included = country_counts[country_counts >= limit].index
+    def __init__(
+        self,
+        ordinal_feature_map: Optional[Dict] = None,
+        file_name: str = "preprocessor.joblib"
+    ):
+        self.ordinal_feature_map = (
+            ordinal_feature_map if ordinal_feature_map is not None else ORDINAL_FEATURES_MAP
+        )
+        self.path = Path(__file__).resolve().parent.parent / "models" / file_name
+        self.preprocessor: Optional[ColumnTransformer] = None
+        self.feature_lists: Optional[Dict] = None
 
-    df['country_group'] = df['country'].apply(
-        lambda x: x if x in countries_included else 'Other'
-    )
+    def get_feature_lists(self, X: pd.DataFrame) -> Dict:
+        """
+        Detect numerical, binary, one-hot categorical, and ordinal features.
+        """
+        X = X.copy()
 
-    #df = df.drop(columns='country')
-    #df = df.drop(columns=['country'])
+        categorical_features = X.select_dtypes(
+            include=["object", "category", "bool"]
+        ).columns.tolist()
 
-    return df
+        numeric_candidates = X.select_dtypes(include=["number"]).columns.tolist()
 
-def get_feature_lists(X: pd.DataFrame, ordinal_feature_map: dict):
-    X = X.copy()
+        binary_features = []
+        numerical_features = []
 
-    # --- categorical ---
-    categorical_features = X.select_dtypes(
-        include=["object", "category", "bool"]
-    ).columns.tolist()
+        for col in numeric_candidates:
+            unique_vals = set(X[col].dropna().unique())
 
-    # --- numeric ---
-    numeric_candidates = X.select_dtypes(include=["number"]).columns.tolist()
+            if unique_vals.issubset({0, 1}) and len(unique_vals) <= 2:
+                binary_features.append(col)
+            else:
+                numerical_features.append(col)
 
-    binary_features = []
-    numerical_features = []
+        ordinal_features = [
+            col for col in categorical_features if col in self.ordinal_feature_map
+        ]
 
-    for col in numeric_candidates:
-        unique_vals = set(X[col].dropna().unique())
+        onehot_features = [
+            col for col in categorical_features if col not in self.ordinal_feature_map
+        ]
 
-        if unique_vals.issubset({0, 1}) and len(unique_vals) <= 2:
-            binary_features.append(col)
-        else:
-            numerical_features.append(col)
+        feature_lists = {
+            "numerical_features": numerical_features,
+            "binary_features": binary_features,
+            "onehot_features": onehot_features,
+            "ordinal_features": ordinal_features,
+        }
 
-    # --- split categorical ---
-    ordinal_features = [
-        col for col in categorical_features if col in ordinal_feature_map
-    ]
+        self.feature_lists = feature_lists
+        return feature_lists
 
-    onehot_features = [
-        col for col in categorical_features if col not in ordinal_feature_map
-    ]
+    def create_preprocessor(
+        self,
+        feature_lists: Optional[Dict] = None
+    ) -> ColumnTransformer:
+        """
+        Create an unfitted ColumnTransformer.
+        """
+        if feature_lists is None:
+            if self.feature_lists is None:
+                raise ValueError("feature_lists not provided and not yet computed.")
+            feature_lists = self.feature_lists
 
-    return {
-        "numerical_features": numerical_features,
-        "binary_features": binary_features,
-        "onehot_features": onehot_features,
-        "ordinal_features": ordinal_features
-    }
+        numerical_features = feature_lists["numerical_features"]
+        binary_features = feature_lists["binary_features"]
+        onehot_features = feature_lists["onehot_features"]
+        ordinal_features = feature_lists["ordinal_features"]
 
-def create_preprocessor(feature_lists: dict, ordinal_features_map: dict) -> ColumnTransformer:
-    """
-    Create an unfitted ColumnTransformer preprocessor.
-
-    Parameters
-    ----------
-    feature_lists : dict
-        Output of get_feature_lists(), containing:
-        - numerical_features
-        - binary_features
-        - onehot_features
-        - ordinal_features
-
-    ordinal_features_map : dict
-        Mapping of ordinal feature name -> ordered categories
-    """
-    numerical_features = feature_lists["numerical_features"]
-    binary_features = feature_lists["binary_features"]
-    onehot_features = feature_lists["onehot_features"]
-    ordinal_features = feature_lists["ordinal_features"]
-
-    numeric_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),
-        ("scaler", RobustScaler())
-    ])
-
-    binary_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="most_frequent"))
-    ])
-
-    onehot_pipeline = Pipeline([
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
-    ])
-
-    transformers = [
-        ("num", numeric_pipeline, numerical_features),
-        ("bin", binary_pipeline, binary_features),
-        ("cat_onehot", onehot_pipeline, onehot_features),
-    ]
-
-    if ordinal_features:
-        ordinal_pipeline = Pipeline([
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            (
-                "encoder",
-                OrdinalEncoder(
-                    categories=[ordinal_features_map[col] for col in ordinal_features]
-                )
-            )
+        numeric_pipeline = Pipeline([
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", RobustScaler())
         ])
-        transformers.append(("cat_ordinal", ordinal_pipeline, ordinal_features))
 
-    preprocessor = ColumnTransformer(transformers=transformers)
-    return preprocessor
+        binary_pipeline = Pipeline([
+            ("imputer", SimpleImputer(strategy="most_frequent"))
+        ])
 
-def fit_transform_preprocessor(X_train: pd.DataFrame, preprocessor):
-    X_train_processed = preprocessor.fit_transform(X_train)
+        onehot_pipeline = Pipeline([
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+        ])
 
-    feature_names = preprocessor.get_feature_names_out()
+        transformers = [
+            ("num", numeric_pipeline, numerical_features),
+            ("bin", binary_pipeline, binary_features),
+            ("cat_onehot", onehot_pipeline, onehot_features),
+        ]
 
-    X_train_processed = pd.DataFrame(
-        X_train_processed,
-        columns=feature_names,
-        index=X_train.index
-    )
+        if ordinal_features:
+            ordinal_pipeline = Pipeline([
+                ("imputer", SimpleImputer(strategy="most_frequent")),
+                (
+                    "encoder",
+                    OrdinalEncoder(
+                        categories=[
+                            self.ordinal_feature_map[col]
+                            for col in ordinal_features
+                        ]
+                    )
+                )
+            ])
+            transformers.append(("cat_ordinal", ordinal_pipeline, ordinal_features))
 
-    return X_train_processed
+        self.preprocessor = ColumnTransformer(transformers=transformers)
+        return self.preprocessor
 
-def transform_preprocessor(X_test: pd.DataFrame, preprocessor):
-    X_test_processed = preprocessor.transform(X_test)
+    def fit(self, X_train: pd.DataFrame):
+        """
+        Fit the preprocessor on training data only.
+        """
+        self.get_feature_lists(X_train)
+        self.create_preprocessor()
+        self.preprocessor.fit(X_train)
+        return self
 
-    feature_names = preprocessor.get_feature_names_out()
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Transform a dataframe using the fitted preprocessor.
+        """
+        if self.preprocessor is None:
+            raise ValueError("Preprocessor has not been fitted or loaded.")
 
-    X_test_processed = pd.DataFrame(
-        X_test_processed,
-        columns=feature_names,
-        index=X_test.index
-    )
+        X_processed = self.preprocessor.transform(X)
+        feature_names = self.preprocessor.get_feature_names_out()
 
-    return X_test_processed
+        return pd.DataFrame(
+            X_processed,
+            columns=feature_names,
+            index=X.index
+        )
 
-def preprocess_pipeline(X_train: pd.DataFrame, X_test: pd.DataFrame, ordinal_feature_map: dict = None):
-    """
-    Run the full preprocessing pipeline: detect feature types, build the
-    ColumnTransformer, fit on training data, and transform both splits.
+    def fit_transform(self, X_train: pd.DataFrame) -> pd.DataFrame:
+        """
+        Fit on training data and transform it.
+        """
+        self.fit(X_train)
+        return self.transform(X_train)
 
-    Parameters
-    ----------
-    X_train : pd.DataFrame
-        Training features (used to fit the preprocessor).
-    X_test : pd.DataFrame
-        Test features (transformed only, never fitted).
-    ordinal_feature_map : dict
-        Mapping of ordinal feature name -> list of ordered categories.
-        Pass an empty dict if there are no ordinal features.
+    def prepare_train_test(
+        self,
+        X_train: pd.DataFrame,
+        X_test: pd.DataFrame
+    ):
+        """
+        Final convenience method:
+        1. detect feature types from X_train
+        2. build preprocessor
+        3. fit on X_train
+        4. transform X_train
+        5. transform X_test
+        Returns:
+            X_train_processed, X_test_processed, preprocessor
+        """
+        X_train_processed = self.fit_transform(X_train)
+        X_test_processed = self.transform(X_test)
 
-    Returns
-    -------
-        - X_train_processed : pd.DataFrame
-        - X_test_processed  : pd.DataFrame
-    """
-    # Use default if not passed
-    if ordinal_feature_map is None:
-        ordinal_feature_map = ORDINAL_FEATURES_MAP
+        return X_train_processed, X_test_processed, self.preprocessor
 
-    # 1 ── Detect feature types
-    feature_lists = get_feature_lists(X_train, ordinal_feature_map)
+    def save(self):
+        """
+        Save the fitted preprocessor to disk.
+        """
+        if self.preprocessor is None:
+            raise ValueError("No fitted preprocessor to save.")
 
-    # 2 ── Build (unfitted) preprocessor
-    preprocessor = create_preprocessor(feature_lists, ordinal_feature_map)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(self.preprocessor, self.path)
 
-    # 3 ── Fit on train, transform train
-    X_train_processed = fit_transform_preprocessor(X_train, preprocessor)
+    def load(self):
+        """
+        Load a fitted preprocessor from disk.
+        """
+        if not self.path.exists():
+            raise FileNotFoundError(f"No preprocessor found at {self.path}")
 
-    # 4 ── Transform test (no fitting)
-    X_test_processed = transform_preprocessor(X_test, preprocessor)
-
-    return X_train_processed, X_test_processed, preprocessor
+        self.preprocessor = joblib.load(self.path)
+        return self.preprocessor
