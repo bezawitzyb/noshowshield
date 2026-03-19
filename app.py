@@ -38,12 +38,12 @@ max_risk = st.sidebar.slider(
 # -------------------------------------------------
 @st.cache_resource
 def load_pipeline_and_results(relocation_cost, max_risk):
-    pipe = SimpleModelPipeline(
+    pipe = OverbookingOptimizer(
         relocation_cost=relocation_cost,
         max_risk=max_risk
     )
 
-    model_path = BASE_DIR / "models" / "simple_logistic_model_20260318_131522.joblib"
+    model_path = BASE_DIR / "models" / "working_model.pkl"
     results = pipe.run_from_saved_model(str(model_path))
 
     return pipe, results
@@ -142,4 +142,3 @@ else:
         }),
         use_container_width=True
     )
-
