@@ -56,18 +56,18 @@ class ModelManager:
         self.model = model
 
         self.model_params = model_params or {
-            "n_estimators": 100, #100, 300
-            "max_depth": 3, #3, 10
-            "learning_rate": 0.2, #0.2, 0.05
-            "gamma": 10, #10, 1,
-            #    'lambda': 1,
-            #    'alpha': 0,
-            "subsample": 0.5, #minimal impact
-            "colsample_bytree": 0.3, #minimal impact
-            "min_child_weight": 2, #minimal impact
-            "random_state": 0,
-            "scale_pos_weight": 3, #impact
-            "eval_metric": "logloss",
+            'objective' : 'binary:logistic',
+            'booster' : 'gbtree',
+            'n_estimators': 500,
+            'max_depth': 12,
+            'learning_rate': 0.03,
+            'gamma': 1,
+            'subsample': 0.5, #minimal impact
+            'colsample_bytree': 0.5, #minimal impact
+            'min_child_weight': 3, #minimal impact
+            'random_state': 0,
+            'scale_pos_weight': 3, #impact
+            'eval_metric': 'logloss'
         }
 
     def build_model(self):

@@ -1,135 +1,281 @@
-"""
-NoShowShield — SHAP explainability module.
-
-Responsibilities:
-    - Compute SHAP values for the XGBoost classifier
-    - Global feature importance (which features matter most overall)
-    - Local explanations (why THIS specific date/room has high risk)
-    - Format explanations for the dashboard API response
-"""
-import shap
 import numpy as np
 import pandas as pd
-from xgboost import XGBClassifier
-
-from .model import ModelManager
-from .registry import WORKING_MODEL_FILE_NAME
+import shap
 
 
-class SHAPExplainer:
-    """SHAP helper for model explanation and importance."""
+class ExplainerManager:
+    """
+    Handles SHAP explainability for the trained booking cancellation model.
 
-    def __init__(
-        self,
-        model: XGBClassifier = None,
-        feature_names: list = None,
-        model_file: str = None,
-    ):
-        """Initialize SHAP explainer.
+    Responsibilities
+    ----------------
+    - Build a SHAP explainer from a prediction function + background data
+    - Aggregate transformed feature names into business-friendly groups
+    - Produce local explanations for one booking
+    - Produce global explanations across many bookings
+    - Produce date-specific global explanations
+    """
 
-        Args:
-            model (XGBClassifier, optional): Pre-loaded XGBoost model.
-            feature_names (list, optional): List of column names used by the model.
-            model_file (str, optional): Path/name of model file to load via ModelManager.
-                If not provided and no model is passed, uses WORKING_MODEL_FILE_NAME.
-        """
-        if model is None:
-            model_file = model_file or WORKING_MODEL_FILE_NAME
-            model_manager = ModelManager(file_name=model_file)
-            self.model = model_manager.load()
-        else:
-            self.model = model
-
-        if self.model is None:
-            raise ValueError("No model provided or loaded for SHAP explanation")
-
-        if feature_names is not None:
-            self.feature_names = feature_names
-        else:
-            parsed_names = None
-            if hasattr(self.model, "get_booster"):
-                try:
-                    parsed_names = self.model.get_booster().feature_names
-                except Exception:
-                    parsed_names = None
-            if parsed_names is not None:
-                self.feature_names = parsed_names
-            else:
-                raise ValueError(
-                    "feature_names must be provided if it cannot be inferred from the model"
-                )
-
-        # SHAP may require the raw booster to avoid model-internal format mismatch
+    def __init__(self):
         self.explainer = None
-        try:
-            self.explainer = shap.TreeExplainer(self.model)
-        except Exception as e:
-            if hasattr(self.model, "get_booster"):
-                try:
-                    self.explainer = shap.TreeExplainer(
-                        self.model.get_booster(), feature_names=self.feature_names
-                    )
-                except Exception as e2:
-                    raise ValueError(
-                        "Cannot initialize SHAP explainer from model or booster: "
-                        f"({e}) / ({e2})"
-                    )
-            else:
-                raise ValueError(
-                    "Cannot initialize SHAP explainer from model: " f"{e}"
-                )
 
-    def compute_shap_values(self, X: pd.DataFrame) -> np.ndarray:
-        """Compute SHAP values for the given dataset."""
-        if self.explainer is None:
-            raise ValueError("SHAP explainer is not initialized")
+    def build_explainer(self, model_manager, X_background: pd.DataFrame):
+        """
+        Build a SHAP explainer using the model's predicted cancellation probability.
 
-        shap_vals = self.explainer.shap_values(X)
-        # shap.TreeExplainer returns list for multiclass; select binary/mode
-        if isinstance(shap_vals, list) and len(shap_vals) == 2:
-            shap_vals = shap_vals[1]
+        Parameters
+        ----------
+        model_manager : ModelManager
+            Must contain the trained model in .model
+        X_background : pd.DataFrame
+            Model-compatible transformed input with original transformed feature names
+        """
+        f = lambda X: model_manager.model.predict_proba(X)[:, 1]
+        self.explainer = shap.Explainer(f, X_background)
+        return self.explainer
 
-        return np.array(shap_vals)
+    def group_feature_name(self, name: str) -> str:
+        """
+        Collapse transformed feature names into user-friendly business feature groups.
+        """
+        for prefix in ["cat_onehot__", "cat__", "num__", "ord__", "bin__", "remainder__"]:
+            if name.startswith(prefix):
+                name = name[len(prefix):]
 
-    def global_feature_importance(
+        keep_exact = {
+            "lead_time",
+            "arrival_date_year",
+            "arrival_date_week_number",
+            "arrival_date_day_of_month",
+            "stays_in_weekend_nights",
+            "stays_in_week_nights",
+            "adults",
+            "children",
+            "babies",
+            "previous_cancellations",
+            "previous_bookings_not_canceled",
+            "booking_changes",
+            "days_in_waiting_list",
+            "adr",
+            "required_car_parking_spaces",
+            "total_of_special_requests",
+            "special_requests_per_guest",
+            "room_type_mismatch",
+            "total_nights",
+            "weekend_ratio",
+            "agent",
+            "company",
+            "is_repeated_guest",
+        }
+
+        if name in keep_exact:
+            return name
+
+        grouped_prefixes = [
+            "hotel_",
+            "meal_",
+            "country_",
+            "country_group_",
+            "market_segment_",
+            "distribution_channel_",
+            "reserved_room_type_",
+            "assigned_room_type_",
+            "deposit_type_",
+            "customer_type_",
+            "arrival_date_month_",
+        ]
+
+        for prefix in grouped_prefixes:
+            if name.startswith(prefix):
+                if prefix == "country_group_":
+                    return "country"
+                return prefix[:-1]
+
+        return name
+
+    def grouped_local_shap(self, shap_row, feature_names):
+        """
+        Aggregate local SHAP values for one booking into business-friendly groups.
+        """
+        values = np.array(shap_row.values)
+        data = np.array(shap_row.data)
+
+        df = pd.DataFrame({
+            "feature": list(feature_names),
+            "feature_value": data,
+            "shap_value": values,
+        })
+
+        df["feature_group"] = df["feature"].apply(self.group_feature_name)
+
+        grouped = (
+            df.groupby("feature_group", as_index=False)
+            .agg({"shap_value": "sum"})
+        )
+
+        grouped["abs_shap"] = grouped["shap_value"].abs()
+        grouped = grouped.sort_values("abs_shap", ascending=False).drop(columns="abs_shap")
+
+        return grouped
+
+    def grouped_global_shap(self, shap_values, feature_names):
+        """
+        Aggregate global SHAP importance across many bookings into business-friendly groups.
+        Uses mean absolute SHAP value.
+        """
+        shap_matrix = np.array(shap_values.values)
+
+        shap_df = pd.DataFrame(shap_matrix, columns=list(feature_names))
+        mean_abs = shap_df.abs().mean(axis=0).reset_index()
+        mean_abs.columns = ["feature", "mean_abs_shap"]
+
+        mean_abs["feature_group"] = mean_abs["feature"].apply(self.group_feature_name)
+
+        grouped = (
+            mean_abs.groupby("feature_group", as_index=False)["mean_abs_shap"]
+            .sum()
+            .sort_values("mean_abs_shap", ascending=False)
+        )
+
+        return grouped
+
+    def split_local_drivers(self, grouped_df: pd.DataFrame, top_n: int = 5):
+        """
+        Split grouped local SHAP into higher vs lower cancellation risk drivers.
+        Assumes class 1 = canceled.
+        """
+        higher_risk = (
+            grouped_df[grouped_df["shap_value"] > 0]
+            .sort_values("shap_value", ascending=False)
+            .head(top_n)
+            .reset_index(drop=True)
+        )
+
+        lower_risk = (
+            grouped_df[grouped_df["shap_value"] < 0]
+            .sort_values("shap_value", ascending=True)
+            .head(top_n)
+            .reset_index(drop=True)
+        )
+
+        return higher_risk, lower_risk
+
+    def transform_to_shap_df(
         self,
-        X: pd.DataFrame = None,
-        shap_values: np.ndarray = None,
-        top_n: int = None,
+        X_processed,
+        feature_names,
+        index,
     ) -> pd.DataFrame:
-        """Compute global feature importance by mean abs SHAP values."""
-        if shap_values is None:
-            if X is None:
-                raise ValueError("X or shap_values must be provided")
-            shap_values = self.compute_shap_values(X)
+        """
+        Convert processed model input into a DataFrame with original transformed feature names.
+        """
+        try:
+            return pd.DataFrame.sparse.from_spmatrix(
+                X_processed,
+                columns=feature_names,
+                index=index
+            )
+        except Exception:
+            return pd.DataFrame(
+                X_processed,
+                columns=feature_names,
+                index=index
+            )
 
-        importance = np.abs(shap_values).mean(axis=0)
-        importance_df = pd.DataFrame(
-            {"feature": self.feature_names, "importance": importance}
-        ).sort_values(by="importance", ascending=False)
+    def explain_local(self, X_shap: pd.DataFrame, row_index=0):
+        """
+        Compute SHAP values for one or more rows and return:
+        - shap_values
+        - grouped local explanation for the selected row
+        """
+        if self.explainer is None:
+            raise ValueError("Explainer not built yet. Call build_explainer() first.")
 
-        if top_n is not None:
-            importance_df = importance_df.head(top_n)
+        shap_values = self.explainer(X_shap)
+        grouped_local = self.grouped_local_shap(shap_values[row_index], X_shap.columns)
 
-        return importance_df.reset_index(drop=True)
+        return {
+            "shap_values": shap_values,
+            "grouped_local_shap": grouped_local,
+        }
 
-    def local_explanation(self, X: pd.DataFrame, index: int) -> pd.DataFrame:
-        """Generate local explanation for one row in X."""
-        shap_values = self.compute_shap_values(X)
-        if index < 0 or index >= shap_values.shape[0]:
-            raise IndexError("Index out of range for provided SHAP values")
+    def explain_global(self, X_shap: pd.DataFrame):
+        """
+        Compute SHAP values across many rows and return grouped global importance.
+        """
+        if self.explainer is None:
+            raise ValueError("Explainer not built yet. Call build_explainer() first.")
 
-        local_shap_values = shap_values[index]
-        local_explanation_df = pd.DataFrame(
-            {"feature": self.feature_names, "shap_value": local_shap_values}
-        ).sort_values(by="shap_value", ascending=False)
-        return local_explanation_df.reset_index(drop=True)
+        shap_values = self.explainer(X_shap)
+        grouped_global = self.grouped_global_shap(shap_values, X_shap.columns)
 
-    def format_explanation_for_api(self, explanation_df: pd.DataFrame) -> dict:
-        """Format explanation DataFrame for API response."""
-        return explanation_df.to_dict(orient="records")
+        return {
+            "shap_values": shap_values,
+            "grouped_global_shap": grouped_global,
+        }
 
-    @classmethod
-    def from_working_model(cls, feature_names: list = None):
-        """Convenience constructor to load working model from disk."""
-        return cls(model=None, feature_names=feature_names, model_file=WORKING_MODEL_FILE_NAME)
+    def explain_global_for_date(
+        self,
+        selected_date,
+        X_raw: pd.DataFrame,
+        feature_engineer,
+        preprocessor_manager,
+        min_rows: int = 5,
+    ):
+        """
+        Compute grouped global SHAP importance for all bookings on one selected arrival date.
+        """
+        if self.explainer is None:
+            raise ValueError("Explainer not built yet. Call build_explainer() first.")
+
+        X = X_raw.copy()
+
+        X["arrival_date"] = pd.to_datetime(
+            X["arrival_date_day_of_month"].astype(str)
+            + " "
+            + X["arrival_date_month"].astype(str)
+            + " "
+            + X["arrival_date_year"].astype(str),
+            format="%d %B %Y",
+            errors="coerce"
+        )
+
+        selected_date = pd.Timestamp(selected_date)
+        X_date = X[X["arrival_date"] == selected_date].copy()
+
+        if len(X_date) < min_rows:
+            return {
+                "selected_date": selected_date,
+                "n_bookings": len(X_date),
+                "grouped_global_shap": None,
+                "X_date_raw": X_date,
+                "X_date_shap": None,
+                "shap_values_date": None,
+                "message": f"Too few bookings on {selected_date.date()} for stable global SHAP.",
+            }
+
+        X_date_model = X_date.drop(columns=["arrival_date"])
+
+        X_date_fe = feature_engineer.engineer_features(X_date_model.copy())
+        X_date_processed = preprocessor_manager.transform(X_date_fe)
+
+        feature_names = preprocessor_manager.preprocessor.get_feature_names_out()
+
+        X_date_shap = self.transform_to_shap_df(
+            X_processed=X_date_processed,
+            feature_names=feature_names,
+            index=X_date_model.index,
+        )
+
+        shap_values_date = self.explainer(X_date_shap)
+        grouped_global_date = self.grouped_global_shap(shap_values_date, X_date_shap.columns)
+
+        return {
+            "selected_date": selected_date,
+            "n_bookings": len(X_date),
+            "grouped_global_shap": grouped_global_date,
+            "X_date_raw": X_date,
+            "X_date_shap": X_date_shap,
+            "shap_values_date": shap_values_date,
+            "message": None,
+        }
