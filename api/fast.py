@@ -1,3 +1,6 @@
+# For local testing:
+# uvicorn api.fast:app --host 0.0.0.0 --port 8000
+
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
@@ -9,15 +12,18 @@ from eda_package.features import FeatureEngineer
 from eda_package.preprocessor import PreprocessorManager
 from eda_package.model import ModelManager
 from eda_package.optimiser import OverbookingOptimizer
+from eda_package.explainer import ExplainerManager
 
 # --- Instantiate once (shared across app) ---
 data_manager = DataManager()
 feature_engineer = FeatureEngineer()
 preprocessor_manager = PreprocessorManager()
 model_manager = ModelManager()
+explainer_manager = ExplainerManager()
 
 # --- Cache for heavy optimisation artifacts ---
 optimisation_cache: dict = {}
+explainability_cache: dict = {}
 
 def train_artifacts_once():
     """
@@ -84,18 +90,63 @@ def prepare_optimisation_artifacts_once() -> None:
     print("Optimisation cache ready")
     print(optimisation_cache.keys())
 
+def prepare_explainability_artifacts_once() -> None:
+    """
+    Prepare SHAP background data once and build the explainer.
+    """
+    X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
+
+    X_train_fe = feature_engineer.engineer_features(X_train.copy())
+    X_test_fe = feature_engineer.engineer_features(X_test.copy())
+
+    X_train_processed = preprocessor_manager.transform(X_train_fe)
+    X_test_processed = preprocessor_manager.transform(X_test_fe)
+
+    feature_names = preprocessor_manager.preprocessor.get_feature_names_out()
+
+    X_train_shap = explainer_manager.transform_to_shap_df(
+        X_processed=X_train_processed,
+        feature_names=feature_names,
+        index=X_train.index,
+    )
+
+    X_test_shap = explainer_manager.transform_to_shap_df(
+        X_processed=X_test_processed,
+        feature_names=feature_names,
+        index=X_test.index,
+    )
+
+    background = X_train_shap.iloc[:50]
+    explainer_manager.build_explainer(model_manager, background)
+
+    explainability_cache["X_train"] = X_train
+    explainability_cache["X_test"] = X_test
+    explainability_cache["X_test_shap"] = X_test_shap
+    explainability_cache["feature_names"] = feature_names
+
+
 # --- Lifespan handler ---
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # STARTUP
     try:
-        preprocessor_manager.load()
-        model_manager.load()
-    except FileNotFoundError:
-        train_artifacts_once()
+        try:
+            preprocessor_manager.load()
+            model_manager.load()
+        except FileNotFoundError:
+            train_artifacts_once()
+            preprocessor_manager.load()
+            model_manager.load()
 
-    yield  # app runs here
+        prepare_optimisation_artifacts_once()
+        prepare_explainability_artifacts_once()
 
+    except Exception as e:
+        print(f"Startup error: {repr(e)}")
+        raise
+
+    yield
     # SHUTDOWN (optional cleanup if needed)
 
 
@@ -195,9 +246,6 @@ def optimise(
         "recommendations": recommendations.to_dict("records"),
     }
 
-# For local testing:
-# uvicorn api.fast:app --host 0.0.0.0 --port 8000
-
 
 # @app.get("/optimise")
 # def optimise(
@@ -218,5 +266,88 @@ def optimise(
 
 #     return result
 
-# For local testing:
-# uvicorn api.fast:app --host 0.0.0.0 --port 8000
+@app.post("/explain/local")
+def explain_local(booking: BookingInput) -> dict:
+    X_pred = pd.DataFrame([booking.model_dump()])
+
+    X_pred = data_manager.group_countries(X_pred)
+    X_pred = feature_engineer.engineer_features(X_pred)
+    X_pred_processed = preprocessor_manager.transform(X_pred)
+
+    feature_names = preprocessor_manager.preprocessor.get_feature_names_out()
+
+    X_pred_shap = explainer_manager.transform_to_shap_df(
+        X_processed=X_pred_processed,
+        feature_names=feature_names,
+        index=X_pred.index,
+    )
+
+    local_result = explainer_manager.explain_local(X_pred_shap, row_index=0)
+    grouped_local = local_result["grouped_local_shap"]
+
+    higher_risk, lower_risk = explainer_manager.split_local_drivers(
+        grouped_local,
+        top_n=5,
+    )
+
+    y_prob = model_manager.predict_proba(X_pred_processed)[:, 1]
+
+    return {
+        "cancellation_probability": float(y_prob[0]),
+        "higher_cancellation_risk": higher_risk.to_dict("records"),
+        "lower_cancellation_risk": lower_risk.to_dict("records"),
+        "grouped_local_shap": grouped_local.to_dict("records"),
+    }
+
+@app.get("/explain/global-by-date")
+def explain_global_by_date(
+    selected_date: str,
+    min_rows: int = 5,
+) -> dict:
+    result = explainer_manager.explain_global_for_date(
+        selected_date=selected_date,
+        X_raw=explainability_cache["X_test"],
+        data_manager=data_manager,
+        feature_engineer=feature_engineer,
+        preprocessor_manager=preprocessor_manager,
+        min_rows=min_rows,
+    )
+
+    response = {
+        "selected_date": str(result["selected_date"].date()),
+        "n_bookings": result["n_bookings"],
+        "message": result["message"],
+        "grouped_global_shap": None,
+    }
+
+    if result["grouped_global_shap"] is not None:
+        response["grouped_global_shap"] = result["grouped_global_shap"].to_dict("records")
+
+    return response
+
+@app.get("/explain/available-dates")
+def explain_available_dates() -> dict:
+    X_test = explainability_cache["X_test"].copy()
+
+    X_test["arrival_date"] = pd.to_datetime(
+        X_test["arrival_date_day_of_month"].astype(str)
+        + " "
+        + X_test["arrival_date_month"].astype(str)
+        + " "
+        + X_test["arrival_date_year"].astype(str),
+        format="%d %B %Y",
+        errors="coerce"
+    )
+
+    counts = (
+        X_test["arrival_date"]
+        .value_counts()
+        .sort_index()
+        .reset_index()
+    )
+    counts.columns = ["arrival_date", "n_bookings"]
+    counts["arrival_date"] = counts["arrival_date"].dt.strftime("%Y-%m-%d")
+
+    return {
+        "dates": counts.to_dict("records")
+    }

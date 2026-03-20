@@ -218,6 +218,7 @@ class ExplainerManager:
         self,
         selected_date,
         X_raw: pd.DataFrame,
+        data_manager,
         feature_engineer,
         preprocessor_manager,
         min_rows: int = 5,
@@ -255,6 +256,9 @@ class ExplainerManager:
             }
 
         X_date_model = X_date.drop(columns=["arrival_date"])
+
+        if "country" in X_date_model.columns:
+            X_date_model = data_manager.group_countries(X_date_model.copy())
 
         X_date_fe = feature_engineer.engineer_features(X_date_model.copy())
         X_date_processed = preprocessor_manager.transform(X_date_fe)
