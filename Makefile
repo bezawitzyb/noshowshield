@@ -20,6 +20,15 @@ test_structure:
 	@bash tests/test_structure.sh
 
 #======================#
+#       File mgmt      #
+#======================#
+
+create_preprocessor:
+	@python -m eda_package.preprocessor
+
+
+
+#======================#
 #          API         #
 #======================#
 
