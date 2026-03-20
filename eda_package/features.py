@@ -78,6 +78,8 @@ class FeatureEngineer:
         df = self.add_special_requests_per_guest(df)
         df = self.add_weekend_ratio(df)
 
+#        df['total_stays'] = df['stays_in_weekend_nights'] + df['stays_in_week_nights']
+
         if drop_leakage:
             df = self.drop_leaky_columns(df)
 
@@ -208,6 +210,7 @@ def engineer_features(
 #    df = add_segment_cancel_rate(df, split_year)
     df = add_special_requests_per_guest(df)
     df = add_weekend_ratio(df)
+
     return df
 
 def engineer_features_v2(
