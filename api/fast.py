@@ -76,9 +76,14 @@ def prepare_optimisation_artifacts_once() -> None:
     X_test_with_dates["is_canceled"] = y_test
 
     model = model_manager.model
+    try:
+        model_params = {}
+    except AttributeError:
+        model_params = {"note": "params unavailable (XGBoost version mismatch)"}
+
     model_info = {
         "model_type": type(model).__name__,
-        "model_params": model.get_params(),
+        "model_params": model_params,
     }
 
     optimisation_cache["X_test_with_dates"] = X_test_with_dates
