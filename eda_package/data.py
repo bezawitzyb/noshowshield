@@ -121,7 +121,8 @@ class DataManager:
     def group_countries(
         self,
         df: pd.DataFrame,
-        limit: Optional[int] = None
+        limit: Optional[int] = None,
+        drop_country_column: bool = True
     ) -> pd.DataFrame:
         """
         Group countries with fewer than `limit` entries into 'Other'.
@@ -140,6 +141,9 @@ class DataManager:
         grouped_df["country_group"] = grouped_df["country"].apply(
             lambda x: x if x in countries_included else "Other"
         )
+
+        if drop_country_column:
+            grouped_df = grouped_df.drop(columns='country')
 
         return grouped_df
 
