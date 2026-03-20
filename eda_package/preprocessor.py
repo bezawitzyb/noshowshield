@@ -206,7 +206,7 @@ class PreprocessorManager:
         self,
         X_train: pd.DataFrame,
         X_test: pd.DataFrame,
-        filter_freatures: bool = False
+        filter_features: bool = False
     ):
         """
         Final convenience method:
@@ -221,7 +221,7 @@ class PreprocessorManager:
         X_train_processed = self.fit_transform(X_train)
         X_test_processed = self.transform(X_test)
 
-        if self.filter_features:
+        if filter_features:
             X_train_processed, X_test_processed = self.filter_features(X_train_processed, X_test_processed)
 
         return X_train_processed, X_test_processed, self.preprocessor
