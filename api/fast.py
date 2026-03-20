@@ -5,11 +5,10 @@ import pandas as pd
 
 from eda_package.data import DataManager
 from eda_package.features import FeatureEngineer
-from eda_package.pipeline import run_from_saved_model
+#from eda_package.pipeline import run_from_saved_model
 from eda_package.preprocessor import PreprocessorManager
 from eda_package.model import ModelManager
-from eda_package.registry import WORKING_MODEL_FILE_NAME
-
+from eda_package.optimiser import OverbookingOptimizer
 
 # --- Instantiate once (shared across app) ---
 data_manager = DataManager()
@@ -17,6 +16,8 @@ feature_engineer = FeatureEngineer()
 preprocessor_manager = PreprocessorManager()
 model_manager = ModelManager()
 
+# --- Cache for heavy optimisation artifacts ---
+optimisation_cache: dict = {}
 
 def train_artifacts_once():
     """
@@ -36,6 +37,52 @@ def train_artifacts_once():
     preprocessor_manager.save()
     model_manager.save()
 
+def prepare_optimisation_artifacts_once() -> None:
+    print("Preparing optimisation artifacts...")
+
+    X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
+    print("Data prepared")
+
+    X_train_fe = feature_engineer.engineer_features(X_train.copy())
+    X_test_fe = feature_engineer.engineer_features(X_test.copy())
+    print("Features engineered")
+
+    X_train_processed = preprocessor_manager.transform(X_train_fe)
+    X_test_processed = preprocessor_manager.transform(X_test_fe)
+    print("Preprocessing done")
+
+    cancel_probs = model_manager.predict_proba(X_test_processed)[:, 1]
+    metrics = model_manager.evaluate(X_test_processed, y_test)
+    print("Predictions done")
+
+    optimizer = OverbookingOptimizer()
+
+    X_test_with_dates = optimizer.build_arrival_date(X_test.copy())
+    print("Test arrival dates built")
+
+    X_train_with_dates = optimizer.build_arrival_date(X_train.copy())
+    X_train_with_dates["is_canceled"] = y_train
+    print("Train arrival dates built")
+
+    capacity_map = optimizer.infer_capacity(X_train_with_dates)
+    print("Capacity inferred")
+
+    X_test_with_dates["is_canceled"] = y_test
+
+    model = model_manager.model
+    model_info = {
+        "model_type": type(model).__name__,
+        "model_params": model.get_params(),
+    }
+
+    optimisation_cache["X_test_with_dates"] = X_test_with_dates
+    optimisation_cache["cancel_probs"] = cancel_probs
+    optimisation_cache["capacity_map"] = capacity_map
+    optimisation_cache["metrics"] = metrics
+    optimisation_cache["model_info"] = model_info
+
+    print("Optimisation cache ready")
+    print(optimisation_cache.keys())
 
 # --- Lifespan handler ---
 @asynccontextmanager
@@ -110,27 +157,66 @@ def predict(booking: BookingInput):
         "cancellation_probability": float(y_prob[0]),
     }
 
-
-
+import time
 
 @app.get("/optimise")
 def optimise(
     relocation_cost: float,
-    max_risk: float
-)-> dict:
+    max_risk: float,
+) -> dict:
+    start = time.time()
 
-    user_input = {
-        "relocation_cost": relocation_cost,
-        "max_risk": max_risk,
-        "max_extra_sweep": 500,
-        "model_file_name": WORKING_MODEL_FILE_NAME,
-        "preprocessor_file_name": "preprocessor.joblib",
+    if "X_test_with_dates" not in optimisation_cache:
+        prepare_optimisation_artifacts_once()
+
+    print(f"Cache check: {time.time() - start:.2f}s")
+
+    optimizer = OverbookingOptimizer(
+        relocation_cost=relocation_cost,
+        max_risk=max_risk,
+        max_extra_sweep=100,
+    )
+
+    t1 = time.time()
+
+    recommendations = optimizer.aggregate_and_recommend(
+        raw_df=optimisation_cache["X_test_with_dates"],
+        cancel_probs=optimisation_cache["cancel_probs"],
+        capacity_map=optimisation_cache["capacity_map"],
+    )
+
+    t2 = time.time()
+    print(f"aggregate_and_recommend: {t2 - t1:.2f}s")
+    print(f"total optimise endpoint: {t2 - start:.2f}s")
+
+    return {
+        "model_info": optimisation_cache["model_info"],
+        "metrics": optimisation_cache["metrics"],
+        "recommendations": recommendations.to_dict("records"),
     }
 
-    result = run_from_saved_model(**user_input)
-    result["recommendations"] = result["recommendations"].to_dict('records')
+# For local testing:
+# uvicorn api.fast:app --host 0.0.0.0 --port 8000
 
-    return result
+
+# @app.get("/optimise")
+# def optimise(
+#     relocation_cost: float,
+#     max_risk: float
+# )-> dict:
+
+#     user_input = {
+#         "relocation_cost": relocation_cost,
+#         "max_risk": max_risk,
+#         "max_extra_sweep": 500,
+#         "model_file_name": WORKING_MODEL_FILE_NAME,
+#         "preprocessor_file_name": "preprocessor.joblib",
+#     }
+
+#     result = run_from_saved_model(**user_input)
+#     result["recommendations"] = result["recommendations"].to_dict('records')
+
+#     return result
 
 # For local testing:
 # uvicorn api.fast:app --host 0.0.0.0 --port 8000
