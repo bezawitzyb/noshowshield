@@ -245,3 +245,19 @@ class PreprocessorManager:
 
         self.preprocessor = joblib.load(self.path)
         return self.preprocessor
+
+
+if __name__ == "__main__":
+    from eda_package.data import DataManager
+    from eda_package.features import FeatureEngineer
+    feature_engineer = FeatureEngineer()
+    data_manager = DataManager()
+    df = data_manager.prepare_dataset()
+    X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
+    X_train_fe = feature_engineer.engineer_features(X_train.copy())
+    X_test_fe = feature_engineer.engineer_features(X_test.copy())
+    preprocessor_manager = PreprocessorManager()
+    X_train_processed, X_test_processed, preprocessor = (
+        preprocessor_manager.prepare_train_test(X_train_fe, X_test_fe)
+    )
+    preprocessor_manager.save()
