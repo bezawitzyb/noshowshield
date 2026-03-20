@@ -1,0 +1,16 @@
+cat > .gcloudignore << 'EOF'
+.git
+.venv
+.DS_Store
+*.egg-info
+__pycache__
+.ipynb_checkpoints
+notebook/
+tests/
+scripts/
+app/
+*.pyc
+.env
+.env.yaml
+.credentials
+EOF

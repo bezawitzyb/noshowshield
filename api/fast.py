@@ -76,9 +76,14 @@ def prepare_optimisation_artifacts_once() -> None:
     X_test_with_dates["is_canceled"] = y_test
 
     model = model_manager.model
+    try:
+        model_params = {}
+    except AttributeError:
+        model_params = {"note": "params unavailable (XGBoost version mismatch)"}
+
     model_info = {
         "model_type": type(model).__name__,
-        "model_params": model.get_params(),
+        "model_params": model_params,
     }
 
     optimisation_cache["X_test_with_dates"] = X_test_with_dates
@@ -302,11 +307,18 @@ def explain_local(booking: BookingInput) -> dict:
 @app.get("/explain/global-by-date")
 def explain_global_by_date(
     selected_date: str,
+    room_type: str | None = None,
     min_rows: int = 5,
 ) -> dict:
+    X_raw = explainability_cache["X_test"]
+
+    # Filter by room type if provided
+    if room_type is not None:
+        X_raw = X_raw[X_raw["assigned_room_type"] == room_type]
+
     result = explainer_manager.explain_global_for_date(
         selected_date=selected_date,
-        X_raw=explainability_cache["X_test"],
+        X_raw=X_raw,
         data_manager=data_manager,
         feature_engineer=feature_engineer,
         preprocessor_manager=preprocessor_manager,
