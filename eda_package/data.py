@@ -122,7 +122,7 @@ class DataManager:
         self,
         df: pd.DataFrame,
         limit: Optional[int] = None,
-        drop_country_column: bool = True
+        drop_country_column: bool = False
     ) -> pd.DataFrame:
         """
         Group countries with fewer than `limit` entries into 'Other'.
