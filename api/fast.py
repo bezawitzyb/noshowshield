@@ -248,6 +248,7 @@ def optimise(
     relocation_cost: float,
     max_risk: float,
     hotel: str | None = None,
+    max_extra_sweep = MAX_EXTRA_SWEEP
 ) -> dict:
     start = time.time()
 
@@ -267,7 +268,7 @@ def optimise(
         optimizer = OverbookingOptimizer(
             relocation_cost=relocation_cost,
             max_risk=max_risk,
-            max_extra_sweep=100,
+            max_extra_sweep=max_extra_sweep,
         )
 
         t1 = time.time()
