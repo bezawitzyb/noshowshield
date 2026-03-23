@@ -162,3 +162,30 @@ class ModelManager:
 
         self.model = joblib.load(self.path)
         return self.model
+
+
+if __name__ == "__main__":
+    from eda_package.data import DataManager
+    from eda_package.features import FeatureEngineer
+    from eda_package.preprocessor import PreprocessorManager
+
+    data_manager = DataManager()
+    X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
+
+    feature_engineer = FeatureEngineer()
+    X_train_fe = feature_engineer.engineer_features(X_train.copy())
+    X_test_fe = feature_engineer.engineer_features(X_test.copy())
+
+    preprocessor_manager = PreprocessorManager()
+    preprocessor_manager.load()
+    X_train_processed = preprocessor_manager.transform(X_train_fe)
+    X_test_processed = preprocessor_manager.transform(X_test_fe)
+
+    model_manager = ModelManager()
+    model_manager.train(X_train_processed, y_train)
+
+    metrics = model_manager.evaluate(X_test_processed, y_test)
+    print("Model metrics:", metrics)
+
+    model_manager.save()
+    print(f"Model saved to {model_manager.path}")

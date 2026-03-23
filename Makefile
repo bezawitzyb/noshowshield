@@ -26,6 +26,9 @@ test_structure:
 create_preprocessor:
 	@python -m eda_package.preprocessor
 
+create_model:
+	@python -m eda_package.model
+
 
 
 #======================#
@@ -104,6 +107,8 @@ docker_run_interactively:
 		bash
 
 # Push and deploy to cloud
+
+deploy: docker_build docker_push docker_deploy
 
 docker_allow:
 	gcloud auth configure-docker $(GCP_REGION)-docker.pkg.dev
