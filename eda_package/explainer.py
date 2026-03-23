@@ -282,15 +282,15 @@ class ExplainerManager:
         selected_date = pd.Timestamp(selected_date)
         X_date = X[X["arrival_date"] == selected_date].copy()
 
-        if len(X_date) < min_rows:
+        if len(X_date) == 0:
             return {
                 "selected_date": selected_date,
-                "n_bookings": len(X_date),
+                "n_bookings": 0,
                 "grouped_global_shap": None,
                 "X_date_raw": X_date,
                 "X_date_shap": None,
                 "shap_values_date": None,
-                "message": f"Too few bookings on {selected_date.date()} for stable global SHAP.",
+                "message": f"No bookings found on {selected_date.date()} for the selected room type.",
             }
 
         X_date_model = X_date.drop(columns=["arrival_date"])
