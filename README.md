@@ -84,10 +84,12 @@ Hotel no-shows and cancellations represent a significant source of lost revenue.
 ```
 noshowshield/
 ├── app.py                    # Streamlit dashboard entry point
+│   ├── streamlit_app.py
 ├── api/
 │   ├── __init__.py
 │   └── fast.py               # FastAPI application (5 endpoints)
 ├── eda_package/              # Core ML package
+│   ├── __init__.py
 │   ├── data.py               # DataManager: load, clean, and split data
 │   ├── features.py           # FeatureEngineer: derived feature creation
 │   ├── preprocessor.py       # PreprocessorManager: sklearn pipeline
@@ -164,7 +166,7 @@ streamlit run app.py
 
 The dashboard opens in your browser and provides:
 
-- **Sidebar controls** — Set relocation cost (€0–1000) and maximum acceptable relocation risk (0–10%)
+- **Sidebar controls** — Set relocation cost (€0–1000) and maximum acceptable relocation risk (0–1)
 - **Date and room type filters** — Narrow recommendations to specific arrival dates or room categories
 - **Summary metrics** — Model accuracy, AUC, and aggregate expected revenue uplift
 - **Recommendations table** — Per-group optimal overbooking levels, net benefit, and relocation probability
@@ -431,11 +433,11 @@ Recommendations (arrival_date × room_type)
 
 | Metric | Score |
 |---|---|
-| Accuracy | 0.79 |
-| AUC | 0.81 |
-| Precision | 0.67 |
-| Recall | 0.48 |
-| F1 | 0.56 |
+| Accuracy | 0.84 |
+| AUC | 0.85 |
+| Precision | 0.66 |
+| Recall | 0.86 |
+| F1 | 0.74 |
 
 **Overbooking math:** The optimizer uses the exact Poisson-Binomial distribution (computed via dynamic programming on individual Bernoulli probabilities) rather than a normal or Poisson approximation, giving precise relocation probability estimates even for small groups.
 
