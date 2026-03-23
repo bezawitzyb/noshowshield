@@ -21,8 +21,7 @@ class ExplainerManager:
     than the shap library's TreeExplainer.  Both use the same exact tree-path
     algorithm; the native path avoids a version-incompatibility between the
     shap library and XGBoost 3.x that prevents TreeExplainer from being
-    instantiated.  The result is identical and fast (no sampling, no
-    background data required).
+    instantiated.
     """
 
     def __init__(self):
@@ -45,7 +44,7 @@ class ExplainerManager:
     def _compute_shap_array(self, X: pd.DataFrame) -> np.ndarray:
         """
         Compute per-feature SHAP values using XGBoost's native pred_contribs.
-
+        Reason: Error when using the TreeExplainer from the lecture.
         Returns
         -------
         np.ndarray of shape (n_samples, n_features)
@@ -260,7 +259,7 @@ class ExplainerManager:
         data_manager,
         feature_engineer,
         preprocessor_manager,
-        min_rows: int = 5,
+        min_rows: int = 1,
     ):
         """
         Compute grouped global SHAP importance for all bookings on one selected arrival date.
