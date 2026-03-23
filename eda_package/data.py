@@ -133,6 +133,8 @@ class DataManager:
         if limit is None:
             limit = self.country_limit
 
+#        print("Grouping countries under: ", limit)
+
         grouped_df = df.copy()
 
         country_counts = grouped_df["country"].value_counts()
