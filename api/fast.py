@@ -4,7 +4,10 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
+from functools import lru_cache
 import pandas as pd
+import numpy as np
+import time
 
 from eda_package.data import DataManager
 from eda_package.features import FeatureEngineer
@@ -25,6 +28,23 @@ explainer_manager = ExplainerManager()
 # --- Cache for heavy optimisation artifacts ---
 optimisation_cache: dict = {}
 explainability_cache: dict = {}
+
+# Cache for recommendations keyed by (relocation_cost, max_risk)
+_recommendations_cache = {}
+
+def get_cache_key(relocation_cost: float, max_risk: float) -> str:
+    """Generate cache key for recommendation parameters."""
+    return f"{relocation_cost:.4f}_{max_risk:.6f}"
+
+def get_cached_recommendations(relocation_cost: float, max_risk: float):
+    """Get recommendations from cache if they exist."""
+    key = get_cache_key(relocation_cost, max_risk)
+    return _recommendations_cache.get(key)
+
+def set_cached_recommendations(relocation_cost: float, max_risk: float, recommendations: pd.DataFrame):
+    """Store recommendations in cache."""
+    key = get_cache_key(relocation_cost, max_risk)
+    _recommendations_cache[key] = recommendations.copy()
 
 def train_artifacts_once():
     """
@@ -222,7 +242,6 @@ def predict(booking: BookingInput):
         "cancellation_probability": float(y_prob[0]),
     }
 
-import time
 
 @app.get("/optimise")
 def optimise(
@@ -237,34 +256,45 @@ def optimise(
 
     print(f"Cache check: {time.time() - start:.2f}s")
 
-    optimizer = OverbookingOptimizer(
-        relocation_cost=relocation_cost,
-        max_risk=max_risk,
-        max_extra_sweep=100,
-    )
+    # Check cache first
+    cached_recs = get_cached_recommendations(relocation_cost, max_risk)
 
-    t1 = time.time()
+    if cached_recs is not None:
+        recommendations = cached_recs
+        print(f"Using cached recommendations for cost={relocation_cost}, risk={max_risk}")
+    else:
+        print(f"Cache miss - computing recommendations...")
+        optimizer = OverbookingOptimizer(
+            relocation_cost=relocation_cost,
+            max_risk=max_risk,
+            max_extra_sweep=100,
+        )
 
-    recommendations = optimizer.aggregate_and_recommend(
-        raw_df=optimisation_cache["X_test_with_dates"],
-        cancel_probs=optimisation_cache["cancel_probs"],
-        capacity_map=optimisation_cache["capacity_map"],
-    )
+        t1 = time.time()
+
+        recommendations = optimizer.aggregate_and_recommend(
+            raw_df=optimisation_cache["X_test_with_dates"],
+            cancel_probs=optimisation_cache["cancel_probs"],
+            capacity_map=optimisation_cache["capacity_map"],
+        )
+
+        # Store in cache
+        set_cached_recommendations(relocation_cost, max_risk, recommendations)
+        print(f"Recommendations computed and cached in {time.time() - t1:.2f}s")
 
     if hotel is not None:
         recommendations = recommendations[
             recommendations["hotel"] == hotel
         ]
 
-    t2 = time.time()
-    print(f"aggregate_and_recommend: {t2 - t1:.2f}s")
-    print(f"total optimise endpoint: {t2 - start:.2f}s")
+    print(f"Total optimise endpoint: {time.time() - start:.2f}s")
 
     return {
         "model_info": optimisation_cache["model_info"],
         "metrics": optimisation_cache["metrics"],
         "recommendations": recommendations.to_dict("records"),
     }
+
 
 @app.get("/optimise/cancellation-distribution")
 def cancellation_distribution(
@@ -281,18 +311,25 @@ def cancellation_distribution(
     if "X_test_with_dates" not in optimisation_cache:
         prepare_optimisation_artifacts_once()
 
-    optimizer = OverbookingOptimizer(
-        relocation_cost=relocation_cost,
-        max_risk=max_risk,
-    )
+    start = time.time()
 
-    recommendations = optimizer.aggregate_and_recommend(
-        raw_df=optimisation_cache["X_test_with_dates"],
-        cancel_probs=optimisation_cache["cancel_probs"],
-        capacity_map=optimisation_cache["capacity_map"],
-    )
+    # Try to get cached recommendations first
+    recommendations = get_cached_recommendations(relocation_cost, max_risk)
+
+    if recommendations is None:
+        # Compute on the fly but don't store (to save memory on single requests)
+        optimizer = OverbookingOptimizer(
+            relocation_cost=relocation_cost,
+            max_risk=max_risk,
+        )
+        recommendations = optimizer.aggregate_and_recommend(
+            raw_df=optimisation_cache["X_test_with_dates"],
+            cancel_probs=optimisation_cache["cancel_probs"],
+            capacity_map=optimisation_cache["capacity_map"],
+        )
 
     # Filter to the requested group
+    optimizer = OverbookingOptimizer(relocation_cost=relocation_cost, max_risk=max_risk)
     filtered = optimizer.get_recommendations(
         recommendations=recommendations,
         dates=[selected_date],
@@ -307,7 +344,11 @@ def cancellation_distribution(
         }
 
     row = filtered.iloc[0]
+
+    # Compute distribution (fast FFT method for large hotels)
     distribution_data = optimizer.get_cancellation_distributions(row)
+
+    print(f"Distribution computed in {time.time() - start:.2f}s")
 
     return {
         "selected_date": selected_date,
@@ -316,24 +357,6 @@ def cancellation_distribution(
         "distribution": distribution_data,
     }
 
-# @app.get("/optimise")
-# def optimise(
-#     relocation_cost: float,
-#     max_risk: float
-# )-> dict:
-
-#     user_input = {
-#         "relocation_cost": relocation_cost,
-#         "max_risk": max_risk,
-#         "max_extra_sweep": 500,
-#         "model_file_name": WORKING_MODEL_FILE_NAME,
-#         "preprocessor_file_name": "preprocessor.joblib",
-#     }
-
-#     result = run_from_saved_model(**user_input)
-#     result["recommendations"] = result["recommendations"].to_dict('records')
-
-#     return result
 
 @app.post("/explain/local")
 def explain_local(booking: BookingInput) -> dict:
@@ -367,6 +390,7 @@ def explain_local(booking: BookingInput) -> dict:
         "lower_cancellation_risk": lower_risk.to_dict("records"),
         "grouped_local_shap": grouped_local.to_dict("records"),
     }
+
 
 @app.get("/explain/global-by-date")
 def explain_global_by_date(
@@ -404,6 +428,7 @@ def explain_global_by_date(
         response["grouped_global_shap"] = result["grouped_global_shap"].to_dict("records")
 
     return response
+
 
 @app.get("/random-booking")
 def random_booking() -> dict:

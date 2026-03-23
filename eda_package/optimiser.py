@@ -109,6 +109,7 @@ class OverbookingOptimizer:
     def poisson_binomial_pmf(probs: Sequence[float]) -> np.ndarray:
         """
         Exact Poisson-Binomial PMF via dynamic programming.
+        For small n (< 80). O(n²) complexity.
         """
         probs = np.asarray(probs, dtype=np.float64)
         n = len(probs)
@@ -121,6 +122,29 @@ class OverbookingOptimizer:
             new[0] = pmf[0] * (1 - p)
             new[1:] = pmf[1:] * (1 - p) + pmf[:-1] * p
             pmf = new
+
+        return pmf
+
+    @staticmethod
+    def poisson_binomial_pmf_fft(probs: Sequence[float]) -> np.ndarray:
+        """
+        Compute Poisson-Binomial PMF using FFT (O(n log n)).
+        Much faster for large n (≥80).
+        """
+        probs = np.asarray(probs, dtype=np.float64)
+        n = len(probs)
+
+        # Use characteristic function and FFT
+        omega = np.exp(2j * np.pi / (n + 1))
+        k = np.arange(n + 1)
+
+        # Characteristic function: prod((1-p) + p*omega^k)
+        cf = np.prod(1 - probs[:, None] + probs[:, None] * omega ** k, axis=0)
+        pmf = np.fft.ifft(cf).real
+
+        # Ensure non-negative and normalized (numerical safety)
+        pmf = np.maximum(pmf, 0)
+        pmf = pmf / pmf.sum()
 
         return pmf
 
@@ -309,11 +333,8 @@ class OverbookingOptimizer:
     # ------------------------------------------------------------------
     def get_cancellation_distributions(self, row: pd.Series) -> dict:
         """
-        Compute Poisson-Binomial PMF for cancellation counts
-        for both the current and recommended booking states.
-
-        Returns x-values and probabilities for both scenarios,
-        plus the minimum cancellations needed to avoid relocation.
+        Compute Poisson-Binomial PMF for cancellation counts.
+        Uses FFT for large hotels (>80 bookings) for speed.
         """
         cancel_probs = np.array(row["individual_probs"])
         mean_cancel = cancel_probs.mean()
@@ -321,8 +342,13 @@ class OverbookingOptimizer:
         recommended_total = int(row["recommended_total"])
         capacity = int(row["capacity"])
 
+        n_current = len(cancel_probs)
+
+        # Choose method based on size (FFT is faster for n > 80)
+        pmf_method = self.poisson_binomial_pmf_fft if n_current > 80 else self.poisson_binomial_pmf
+
         # Current state PMF
-        pmf_current = self.poisson_binomial_pmf(cancel_probs)
+        pmf_current = pmf_method(cancel_probs)
         x_current = list(range(len(pmf_current)))
 
         # Recommended state: append extra bookings at mean cancel rate
@@ -334,7 +360,7 @@ class OverbookingOptimizer:
         else:
             extended_cancel_probs = cancel_probs
 
-        pmf_recommended = self.poisson_binomial_pmf(extended_cancel_probs)
+        pmf_recommended = pmf_method(extended_cancel_probs)
         x_recommended = list(range(len(pmf_recommended)))
 
         # Minimum cancellations needed so show-ups don't exceed capacity
@@ -344,7 +370,7 @@ class OverbookingOptimizer:
             "current": {
                 "x": x_current,
                 "pmf": pmf_current.tolist(),
-                "n_bookings": len(cancel_probs),
+                "n_bookings": n_current,
             },
             "recommended": {
                 "x": x_recommended,
