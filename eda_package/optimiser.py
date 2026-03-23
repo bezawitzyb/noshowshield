@@ -277,7 +277,7 @@ class OverbookingOptimizer:
         rec_df = pd.DataFrame(recommendations)
 
         result = pd.concat(
-            [grouped.drop(columns=["individual_probs"]).reset_index(drop=True), rec_df],
+            [grouped.reset_index(drop=True), rec_df],
             axis=1,
         )
 
@@ -290,6 +290,7 @@ class OverbookingOptimizer:
             "ci_upper",
             "expected_show_ups",
             "mean_adr",
+            "individual_probs",
             "recommended_extra",
             "recommended_total",
             "additional_revenue",
