@@ -49,6 +49,10 @@ def prepare_optimisation_artifacts_once() -> None:
     X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
     print("Data prepared")
 
+    if "country" in X_train.columns:
+        X_train = data_manager.group_countries(X_train.copy())
+        X_test = data_manager.group_countries(X_test.copy())
+
     X_train_fe = feature_engineer.engineer_features(X_train.copy())
     X_test_fe = feature_engineer.engineer_features(X_test.copy())
     print("Features engineered")
@@ -100,6 +104,10 @@ def prepare_explainability_artifacts_once() -> None:
     Prepare SHAP background data once and build the explainer.
     """
     X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
+
+    if "country" in X_train.columns:
+        X_train = data_manager.group_countries(X_train.copy())
+        X_test = data_manager.group_countries(X_test.copy())
 
     X_train_fe = feature_engineer.engineer_features(X_train.copy())
     X_test_fe = feature_engineer.engineer_features(X_test.copy())
