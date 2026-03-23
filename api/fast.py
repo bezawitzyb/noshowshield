@@ -383,6 +383,44 @@ def random_booking() -> dict:
     return {"booking": booking, "actual_outcome": actual}
 
 
+@app.get("/top-cancellations")
+def get_top_cancellations(
+    hotel: str,
+    arrival_date: str,
+    room_type: str,
+) -> dict:
+    if "X_test_with_dates" not in optimisation_cache:
+        prepare_optimisation_artifacts_once()
+
+    df = optimisation_cache["X_test_with_dates"].copy()
+    df["cancel_prob"] = optimisation_cache["cancel_probs"]
+
+    # Convert arrival_date string to datetime for comparison
+    target_date = pd.to_datetime(arrival_date)
+
+    filtered = df[
+        (df["hotel"] == hotel) &
+        (df["arrival_date"] == target_date) &
+        (df["assigned_room_type"] == room_type)
+    ]
+
+    top_3 = filtered.sort_values("cancel_prob", ascending=False).head(3)
+
+    # Select a few interesting columns to show in the table
+    cols_to_show = [
+        "lead_time",
+        "adr",
+        "market_segment",
+        "deposit_type",
+        "customer_type",
+        "cancel_prob"
+    ]
+
+    return {
+        "top_3": top_3[cols_to_show].to_dict("records")
+    }
+
+
 @app.get("/explain/available-dates")
 def explain_available_dates() -> dict:
     X_test = explainability_cache["X_test"].copy()
