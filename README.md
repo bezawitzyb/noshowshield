@@ -74,7 +74,6 @@ Hotel no-shows and cancellations represent a significant source of lost revenue.
 | API | FastAPI + Uvicorn |
 | Dashboard | Streamlit |
 | Model Persistence | joblib |
-| ML Tracking | MLflow, Prefect |
 | Cloud | Google Cloud Run, Artifact Registry |
 | Containerization | Docker |
 
