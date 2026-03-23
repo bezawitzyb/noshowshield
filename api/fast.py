@@ -265,6 +265,55 @@ def optimise(
         "recommendations": recommendations.to_dict("records"),
     }
 
+@app.get("/optimise/cancellation-distribution")
+def cancellation_distribution(
+    selected_date: str,
+    room_type: str,
+    hotel: str | None = None,
+    relocation_cost: float = DEFAULT_RELOCATION_COST,
+    max_risk: float = DEFAULT_MAX_RISK,
+) -> dict:
+    """
+    Return Poisson-Binomial cancellation PMF for current vs recommended
+    booking state, for a specific date + room type combination.
+    """
+    if "X_test_with_dates" not in optimisation_cache:
+        prepare_optimisation_artifacts_once()
+
+    optimizer = OverbookingOptimizer(
+        relocation_cost=relocation_cost,
+        max_risk=max_risk,
+    )
+
+    recommendations = optimizer.aggregate_and_recommend(
+        raw_df=optimisation_cache["X_test_with_dates"],
+        cancel_probs=optimisation_cache["cancel_probs"],
+        capacity_map=optimisation_cache["capacity_map"],
+    )
+
+    # Filter to the requested group
+    filtered = optimizer.get_recommendations(
+        recommendations=recommendations,
+        dates=[selected_date],
+        room_types=[room_type],
+        hotels=hotel,
+    )
+
+    if filtered.empty:
+        return {
+            "error": f"No data found for date={selected_date}, "
+                     f"room_type={room_type}, hotel={hotel}"
+        }
+
+    row = filtered.iloc[0]
+    distribution_data = optimizer.get_cancellation_distributions(row)
+
+    return {
+        "selected_date": selected_date,
+        "room_type": room_type,
+        "hotel": hotel,
+        "distribution": distribution_data,
+    }
 
 # @app.get("/optimise")
 # def optimise(

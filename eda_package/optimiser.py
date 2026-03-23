@@ -305,6 +305,57 @@ class OverbookingOptimizer:
         return result
 
     # ------------------------------------------------------------------
+    # cancellation distribution helper
+    # ------------------------------------------------------------------
+    def get_cancellation_distributions(self, row: pd.Series) -> dict:
+        """
+        Compute Poisson-Binomial PMF for cancellation counts
+        for both the current and recommended booking states.
+
+        Returns x-values and probabilities for both scenarios,
+        plus the minimum cancellations needed to avoid relocation.
+        """
+        cancel_probs = np.array(row["individual_probs"])
+        mean_cancel = cancel_probs.mean()
+        recommended_extra = int(row["recommended_extra"])
+        recommended_total = int(row["recommended_total"])
+        capacity = int(row["capacity"])
+
+        # Current state PMF
+        pmf_current = self.poisson_binomial_pmf(cancel_probs)
+        x_current = list(range(len(pmf_current)))
+
+        # Recommended state: append extra bookings at mean cancel rate
+        if recommended_extra > 0:
+            extended_cancel_probs = np.concatenate([
+                cancel_probs,
+                np.full(recommended_extra, mean_cancel)
+            ])
+        else:
+            extended_cancel_probs = cancel_probs
+
+        pmf_recommended = self.poisson_binomial_pmf(extended_cancel_probs)
+        x_recommended = list(range(len(pmf_recommended)))
+
+        # Minimum cancellations needed so show-ups don't exceed capacity
+        min_cancellations_needed = max(0, recommended_total - capacity)
+
+        return {
+            "current": {
+                "x": x_current,
+                "pmf": pmf_current.tolist(),
+                "n_bookings": len(cancel_probs),
+            },
+            "recommended": {
+                "x": x_recommended,
+                "pmf": pmf_recommended.tolist(),
+                "n_bookings": recommended_total,
+            },
+            "min_cancellations_needed": min_cancellations_needed,
+            "capacity": capacity,
+        }
+
+    # ------------------------------------------------------------------
     # filtering helper
     # ------------------------------------------------------------------
 
