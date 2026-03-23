@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import shap
+import xgboost as xgb
 
 
 class ExplainerManager:
@@ -9,30 +9,52 @@ class ExplainerManager:
 
     Responsibilities
     ----------------
-    - Build a SHAP explainer from a prediction function + background data
+    - Build an explainer from a trained XGBoost model
     - Aggregate transformed feature names into business-friendly groups
     - Produce local explanations for one booking
     - Produce global explanations across many bookings
     - Produce date-specific global explanations
+
+    Implementation note
+    -------------------
+    SHAP values are computed via XGBoost's native pred_contribs=True rather
+    than the shap library's TreeExplainer.  Both use the same exact tree-path
+    algorithm; the native path avoids a version-incompatibility between the
+    shap library and XGBoost 3.x that prevents TreeExplainer from being
+    instantiated.  The result is identical and fast (no sampling, no
+    background data required).
     """
 
     def __init__(self):
-        self.explainer = None
+        self.booster = None
 
-    def build_explainer(self, model_manager, X_background: pd.DataFrame):
+    def build_explainer(self, model_manager, X_background: pd.DataFrame = None):
         """
-        Build a SHAP explainer using the model's predicted cancellation probability.
+        Store the XGBoost booster for native SHAP computation.
 
         Parameters
         ----------
         model_manager : ModelManager
             Must contain the trained model in .model
-        X_background : pd.DataFrame
-            Model-compatible transformed input with original transformed feature names
+        X_background : pd.DataFrame, optional
+            Unused — kept for backwards-compatible call sites.
         """
-        f = lambda X: model_manager.model.predict_proba(X)[:, 1]
-        self.explainer = shap.Explainer(f, X_background)
-        return self.explainer
+        self.booster = model_manager.model.get_booster()
+        return self.booster
+
+    def _compute_shap_array(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        Compute per-feature SHAP values using XGBoost's native pred_contribs.
+
+        Returns
+        -------
+        np.ndarray of shape (n_samples, n_features)
+            The last column returned by XGBoost (bias term) is dropped so
+            the output aligns 1-to-1 with X.columns.
+        """
+        dmatrix = xgb.DMatrix(X)
+        contribs = self.booster.predict(dmatrix, pred_contribs=True)
+        return contribs[:, :-1]  # drop bias column
 
     def group_feature_name(self, name: str) -> str:
         """
@@ -93,17 +115,25 @@ class ExplainerManager:
 
         return name
 
-    def grouped_local_shap(self, shap_row, feature_names):
+    def grouped_local_shap(
+        self,
+        shap_values_row: np.ndarray,
+        feature_values_row: np.ndarray,
+        feature_names,
+    ) -> pd.DataFrame:
         """
         Aggregate local SHAP values for one booking into business-friendly groups.
-        """
-        values = np.array(shap_row.values)
-        data = np.array(shap_row.data)
 
+        Parameters
+        ----------
+        shap_values_row : np.ndarray, shape (n_features,)
+        feature_values_row : np.ndarray, shape (n_features,)
+        feature_names : sequence of str
+        """
         df = pd.DataFrame({
             "feature": list(feature_names),
-            "feature_value": data,
-            "shap_value": values,
+            "feature_value": feature_values_row,
+            "shap_value": shap_values_row,
         })
 
         df["feature_group"] = df["feature"].apply(self.group_feature_name)
@@ -118,14 +148,21 @@ class ExplainerManager:
 
         return grouped
 
-    def grouped_global_shap(self, shap_values, feature_names):
+    def grouped_global_shap(
+        self,
+        shap_array: np.ndarray,
+        feature_names,
+    ) -> pd.DataFrame:
         """
         Aggregate global SHAP importance across many bookings into business-friendly groups.
         Uses mean absolute SHAP value.
-        """
-        shap_matrix = np.array(shap_values.values)
 
-        shap_df = pd.DataFrame(shap_matrix, columns=list(feature_names))
+        Parameters
+        ----------
+        shap_array : np.ndarray, shape (n_samples, n_features)
+        feature_names : sequence of str
+        """
+        shap_df = pd.DataFrame(shap_array, columns=list(feature_names))
         mean_abs = shap_df.abs().mean(axis=0).reset_index()
         mean_abs.columns = ["feature", "mean_abs_shap"]
 
@@ -184,18 +221,20 @@ class ExplainerManager:
 
     def explain_local(self, X_shap: pd.DataFrame, row_index=0):
         """
-        Compute SHAP values for one or more rows and return:
-        - shap_values
-        - grouped local explanation for the selected row
+        Compute SHAP values for one or more rows and return grouped local explanation.
         """
-        if self.explainer is None:
+        if self.booster is None:
             raise ValueError("Explainer not built yet. Call build_explainer() first.")
 
-        shap_values = self.explainer(X_shap)
-        grouped_local = self.grouped_local_shap(shap_values[row_index], X_shap.columns)
+        shap_array = self._compute_shap_array(X_shap)
+        grouped_local = self.grouped_local_shap(
+            shap_values_row=shap_array[row_index],
+            feature_values_row=X_shap.iloc[row_index].values,
+            feature_names=X_shap.columns,
+        )
 
         return {
-            "shap_values": shap_values,
+            "shap_values": shap_array,
             "grouped_local_shap": grouped_local,
         }
 
@@ -203,14 +242,14 @@ class ExplainerManager:
         """
         Compute SHAP values across many rows and return grouped global importance.
         """
-        if self.explainer is None:
+        if self.booster is None:
             raise ValueError("Explainer not built yet. Call build_explainer() first.")
 
-        shap_values = self.explainer(X_shap)
-        grouped_global = self.grouped_global_shap(shap_values, X_shap.columns)
+        shap_array = self._compute_shap_array(X_shap)
+        grouped_global = self.grouped_global_shap(shap_array, X_shap.columns)
 
         return {
-            "shap_values": shap_values,
+            "shap_values": shap_array,
             "grouped_global_shap": grouped_global,
         }
 
@@ -226,7 +265,7 @@ class ExplainerManager:
         """
         Compute grouped global SHAP importance for all bookings on one selected arrival date.
         """
-        if self.explainer is None:
+        if self.booster is None:
             raise ValueError("Explainer not built yet. Call build_explainer() first.")
 
         X = X_raw.copy()
@@ -271,8 +310,8 @@ class ExplainerManager:
             index=X_date_model.index,
         )
 
-        shap_values_date = self.explainer(X_date_shap)
-        grouped_global_date = self.grouped_global_shap(shap_values_date, X_date_shap.columns)
+        shap_array = self._compute_shap_array(X_date_shap)
+        grouped_global_date = self.grouped_global_shap(shap_array, X_date_shap.columns)
 
         return {
             "selected_date": selected_date,
@@ -280,6 +319,6 @@ class ExplainerManager:
             "grouped_global_shap": grouped_global_date,
             "X_date_raw": X_date,
             "X_date_shap": X_date_shap,
-            "shap_values_date": shap_values_date,
+            "shap_values_date": shap_array,
             "message": None,
         }
