@@ -70,7 +70,7 @@ def prepare_optimisation_artifacts_once() -> None:
     X_train_with_dates["is_canceled"] = y_train
     print("Train arrival dates built")
 
-    capacity_map = optimizer.infer_capacity(X_train_with_dates)
+    capacity_map = optimizer.infer_capacity(X_train_with_dates, hotel_col="hotel")
     print("Capacity inferred")
 
     X_test_with_dates["is_canceled"] = y_test
@@ -219,6 +219,7 @@ import time
 def optimise(
     relocation_cost: float,
     max_risk: float,
+    hotel: str | None = None, 
 ) -> dict:
     start = time.time()
 
@@ -240,6 +241,11 @@ def optimise(
         cancel_probs=optimisation_cache["cancel_probs"],
         capacity_map=optimisation_cache["capacity_map"],
     )
+
+    if hotel is not None:
+        recommendations = recommendations[
+            recommendations["hotel"] == hotel
+        ]
 
     t2 = time.time()
     print(f"aggregate_and_recommend: {t2 - t1:.2f}s")

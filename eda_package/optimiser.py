@@ -73,6 +73,7 @@ class OverbookingOptimizer:
     def infer_capacity(
         self,
         df: pd.DataFrame,
+        hotel_col: str = "hotel",
         date_col: str = "arrival_date",
         room_col: str = "assigned_room_type",
     ) -> Dict:
@@ -87,13 +88,13 @@ class OverbookingOptimizer:
 
         counts = (
             showed_up
-            .groupby([date_col, room_col])
+            .groupby([date_col, hotel_col, room_col])
             .size()
             .reset_index(name="n_showups")
         )
 
         capacity_map = (
-            counts.groupby(room_col)["n_showups"]
+            counts.groupby(hotel_col,room_col)["n_showups"]
             .max()
             .to_dict()
         )
@@ -211,8 +212,9 @@ class OverbookingOptimizer:
         raw_df: pd.DataFrame,
         cancel_probs: Sequence[float],
         capacity_map: Dict,
-        group_cols: tuple = ("arrival_date", "assigned_room_type"),
+        group_cols: tuple = ("arrival_date", "hotel", "assigned_room_type"),
         room_col: str = "assigned_room_type",
+        hotel_col: str = "hotel",
         adr_col: str = "adr",
     ) -> pd.DataFrame:
         """
@@ -252,7 +254,13 @@ class OverbookingOptimizer:
             grouped["total_bookings"] - grouped["expected_cancellations"]
         )
 
-        grouped["capacity"] = grouped[room_col].map(capacity_map)
+        grouped["capacity"] = grouped.apply(
+            lambda row: capacity_map.get(
+                (row[hotel_col], row[room_col]),
+                row["total_bookings"]   # fallback if unseen combination
+            ),
+            axis=1,
+        ).astype(int)
         grouped["capacity"] = grouped["capacity"].fillna(grouped["total_bookings"])
         grouped["capacity"] = grouped["capacity"].astype(int)
 
@@ -273,6 +281,7 @@ class OverbookingOptimizer:
         )
 
         leading = list(group_cols) + [
+            "hotel"
             "capacity",
             "total_bookings",
             "expected_cancellations",
@@ -303,8 +312,10 @@ class OverbookingOptimizer:
         recommendations: pd.DataFrame,
         dates,
         room_types,
+        hotels=None,
         date_col: str = "arrival_date",
         room_col: str = "assigned_room_type",
+        hotel_col: str = "hotel",
     ) -> pd.DataFrame:
         """
         Filter recommendations by arrival date(s) and room type(s).
@@ -322,5 +333,3 @@ class OverbookingOptimizer:
         ].reset_index(drop=True)
 
         return filtered
-
-    

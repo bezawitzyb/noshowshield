@@ -90,7 +90,7 @@ def run_from_saved_model(
     # 9  infer capacity from training data
     X_train_with_dates = optimizer.build_arrival_date(X_train)
     X_train_with_dates["is_canceled"] = y_train
-    capacity_map = optimizer.infer_capacity(X_train_with_dates)
+    capacity_map = optimizer.infer_capacity(X_train_with_dates, hotel_col="hotel")
 
     # 10 aggregate & recommend
     X_test_with_dates["is_canceled"] = y_test
