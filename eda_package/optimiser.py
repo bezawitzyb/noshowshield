@@ -262,6 +262,9 @@ class OverbookingOptimizer:
             axis=1,
         ).astype(int)
 
+        grouped["expected_cancellations"] = grouped["expected_cancellations"].round().astype(int)
+        grouped["expected_show_ups"] = grouped["expected_show_ups"].round().astype(int)
+
         recommendations = []
         for _, row in grouped.iterrows():
             rec = self.optimise_group(
