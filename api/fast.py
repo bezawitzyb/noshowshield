@@ -13,6 +13,7 @@ from eda_package.preprocessor import PreprocessorManager
 from eda_package.model import ModelManager
 from eda_package.optimiser import OverbookingOptimizer
 from eda_package.explainer import ExplainerManager
+from eda_package.registry import *
 
 # --- Instantiate once (shared across app) ---
 data_manager = DataManager()
@@ -220,6 +221,7 @@ def optimise(
     relocation_cost: float,
     max_risk: float,
     hotel: str | None = None,
+    max_extra_sweep= MAX_EXTRA_SWEEP,
 ) -> dict:
     start = time.time()
 
@@ -231,7 +233,7 @@ def optimise(
     optimizer = OverbookingOptimizer(
         relocation_cost=relocation_cost,
         max_risk=max_risk,
-        max_extra_sweep=100,
+        max_extra_sweep=max_extra_sweep,
     )
 
     t1 = time.time()
