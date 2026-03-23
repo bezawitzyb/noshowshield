@@ -22,7 +22,7 @@ test_structure:
 #======================#
 #       File mgmt      #
 #======================#
-
+#you have to create preprocesor before creating the model
 create_preprocessor:
 	@python -m eda_package.preprocessor
 
