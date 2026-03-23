@@ -219,7 +219,7 @@ import time
 def optimise(
     relocation_cost: float,
     max_risk: float,
-    hotel: str | None = None, 
+    hotel: str | None = None,
 ) -> dict:
     start = time.time()
 
@@ -314,6 +314,7 @@ def explain_local(booking: BookingInput) -> dict:
 def explain_global_by_date(
     selected_date: str,
     room_type: str | None = None,
+    hotel: str | None = None,
     min_rows: int = 5,
 ) -> dict:
     X_raw = explainability_cache["X_test"]
@@ -321,6 +322,9 @@ def explain_global_by_date(
     # Filter by room type if provided
     if room_type is not None:
         X_raw = X_raw[X_raw["assigned_room_type"] == room_type]
+    # Filter by hotel type if provided
+    if hotel is not None:
+        X_raw = X_raw[X_raw["hotel"] == hotel]
 
     result = explainer_manager.explain_global_for_date(
         selected_date=selected_date,

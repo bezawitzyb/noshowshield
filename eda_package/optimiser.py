@@ -94,7 +94,7 @@ class OverbookingOptimizer:
         )
 
         capacity_map = (
-            counts.groupby(hotel_col,room_col)["n_showups"]
+            counts.groupby([hotel_col,room_col])["n_showups"]
             .max()
             .to_dict()
         )
@@ -261,8 +261,6 @@ class OverbookingOptimizer:
             ),
             axis=1,
         ).astype(int)
-        grouped["capacity"] = grouped["capacity"].fillna(grouped["total_bookings"])
-        grouped["capacity"] = grouped["capacity"].astype(int)
 
         recommendations = []
         for _, row in grouped.iterrows():
@@ -281,7 +279,6 @@ class OverbookingOptimizer:
         )
 
         leading = list(group_cols) + [
-            "hotel"
             "capacity",
             "total_bookings",
             "expected_cancellations",
@@ -327,9 +324,15 @@ class OverbookingOptimizer:
 
         timestamps = [pd.Timestamp(d) for d in dates]
 
-        filtered = recommendations[
-            (recommendations[date_col].isin(timestamps))
-            & (recommendations[room_col].isin(room_types))
-        ].reset_index(drop=True)
+        mask = (
+    recommendations[date_col].isin(timestamps)
+    & recommendations[room_col].isin(room_types)
+)
 
+        if hotels is not None:
+            if isinstance(hotels, str):
+                hotels = [hotels]
+            mask &= recommendations[hotel_col].isin(hotels)
+
+        filtered = recommendations[mask].reset_index(drop=True)
         return filtered
