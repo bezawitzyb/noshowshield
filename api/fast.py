@@ -347,6 +347,42 @@ def explain_global_by_date(
 
     return response
 
+@app.get("/random-booking")
+def random_booking() -> dict:
+    """
+    Return a random row from the test set as a BookingInput-compatible payload,
+    along with the actual cancellation outcome for ground-truth display.
+    """
+    import random as rng
+
+    booking_fields = [
+        "hotel", "lead_time", "arrival_date_year", "arrival_date_month",
+        "arrival_date_week_number", "arrival_date_day_of_month",
+        "stays_in_weekend_nights", "stays_in_week_nights", "adults",
+        "children", "babies", "meal", "country", "market_segment",
+        "distribution_channel", "is_repeated_guest", "previous_cancellations",
+        "previous_bookings_not_canceled", "reserved_room_type", "assigned_room_type",
+        "booking_changes", "deposit_type", "agent", "company",
+        "days_in_waiting_list", "customer_type", "adr",
+        "required_car_parking_spaces", "total_of_special_requests",
+    ]
+
+    X_test = data_manager.X_test
+    y_test = data_manager.y_test
+
+    idx = rng.randint(0, len(X_test) - 1)
+    row = X_test.iloc[idx]
+    actual = int(y_test.iloc[idx])
+
+    booking = {f: row[f] for f in booking_fields if f in row.index}
+    booking = {
+        k: (None if isinstance(v, float) and pd.isna(v) else v.item() if hasattr(v, "item") else v)
+        for k, v in booking.items()
+    }
+
+    return {"booking": booking, "actual_outcome": actual}
+
+
 @app.get("/explain/available-dates")
 def explain_available_dates() -> dict:
     X_test = explainability_cache["X_test"].copy()
