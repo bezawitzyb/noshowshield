@@ -13,6 +13,7 @@ from eda_package.preprocessor import PreprocessorManager
 from eda_package.model import ModelManager
 from eda_package.optimiser import OverbookingOptimizer
 from eda_package.explainer import ExplainerManager
+from eda_package.registry import *
 
 # --- Instantiate once (shared across app) ---
 data_manager = DataManager()
