@@ -151,16 +151,8 @@ class ExplainerManager:
         self,
         shap_array: np.ndarray,
         feature_names,
+        eps: float = 1e-10,
     ) -> pd.DataFrame:
-        """
-        Aggregate global SHAP importance across many bookings into business-friendly groups.
-        Uses mean absolute SHAP value.
-
-        Parameters
-        ----------
-        shap_array : np.ndarray, shape (n_samples, n_features)
-        feature_names : sequence of str
-        """
         shap_df = pd.DataFrame(shap_array, columns=list(feature_names))
         mean_abs = shap_df.abs().mean(axis=0).reset_index()
         mean_abs.columns = ["feature", "mean_abs_shap"]
@@ -171,7 +163,10 @@ class ExplainerManager:
             mean_abs.groupby("feature_group", as_index=False)["mean_abs_shap"]
             .sum()
             .sort_values("mean_abs_shap", ascending=False)
+            .reset_index(drop=True)
         )
+
+        grouped = grouped[grouped["mean_abs_shap"] > eps].reset_index(drop=True)
 
         return grouped
 
