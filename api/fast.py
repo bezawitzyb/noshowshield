@@ -385,6 +385,63 @@ def random_booking() -> dict:
     return {"booking": booking, "actual_outcome": actual}
 
 
+@app.get("/top-bookings")
+def top_bookings(n: int = 3) -> dict:
+    """
+    Return the top-n bookings from the test set with the highest predicted
+    cancellation probability, including full booking data for /explain/local.
+    """
+    if "X_test_with_dates" not in optimisation_cache:
+        prepare_optimisation_artifacts_once()
+
+    booking_fields = [
+        "hotel", "lead_time", "arrival_date_year", "arrival_date_month",
+        "arrival_date_week_number", "arrival_date_day_of_month",
+        "stays_in_weekend_nights", "stays_in_week_nights", "adults",
+        "children", "babies", "meal", "country", "market_segment",
+        "distribution_channel", "is_repeated_guest", "previous_cancellations",
+        "previous_bookings_not_canceled", "reserved_room_type", "assigned_room_type",
+        "booking_changes", "deposit_type", "agent", "company",
+        "days_in_waiting_list", "customer_type", "adr",
+        "required_car_parking_spaces", "total_of_special_requests",
+    ]
+
+    cancel_probs = optimisation_cache["cancel_probs"]
+    X_test = data_manager.X_test
+    y_test = data_manager.y_test
+
+    top_indices = cancel_probs.argsort()[::-1][:n]
+
+    results = []
+    for rank, idx in enumerate(top_indices, start=1):
+        row = X_test.iloc[idx]
+        actual = int(y_test.iloc[idx])
+        prob = float(cancel_probs[idx])
+
+        booking = {f: row[f] for f in booking_fields if f in row.index}
+        booking = {
+            k: (None if isinstance(v, float) and pd.isna(v) else v.item() if hasattr(v, "item") else v)
+            for k, v in booking.items()
+        }
+
+        label = (
+            f"#{rank} — {booking.get('hotel', 'N/A')} | "
+            f"Lead: {booking.get('lead_time', '?')}d | "
+            f"ADR: {booking.get('adr', 0):.0f} | "
+            f"{prob * 100:.1f}% cancel risk"
+        )
+
+        results.append({
+            "rank": rank,
+            "label": label,
+            "cancel_prob": prob,
+            "actual_outcome": actual,
+            "booking": booking,
+        })
+
+    return {"top_bookings": results}
+
+
 @app.get("/top-cancellations")
 def get_top_cancellations(
     hotel: str,
