@@ -18,12 +18,13 @@ Usage:
 """
 
 from typing import Optional
+from eda_package.registry import MAX_EXTRA_SWEEP
 
 
 def run_from_saved_model(
     relocation_cost: float = 300.0,
     max_risk: float = 0.02,
-    max_extra_sweep: int = 300,
+    max_extra_sweep: int = MAX_EXTRA_SWEEP,
     model_file_name: Optional[str] = None,
     preprocessor_file_name: str = "preprocessor.joblib",
 ) -> dict:
@@ -112,3 +113,58 @@ def run_from_saved_model(
         "metrics": metrics,
         "recommendations": recommendations,
     }
+
+
+def compute_group_distribution(
+    recommendations: "pd.DataFrame",
+    raw_df: "pd.DataFrame",
+    cancel_probs,
+    capacity_map: dict,
+    hotel: str,
+    arrival_date: str,
+    room_type: str,
+    n_total: int,
+) -> dict:
+    """
+    Compute the show-up PMF for one (hotel, date, room-type) group.
+
+    Parameters
+    ----------
+    recommendations : DataFrame returned by run_from_saved_model
+    raw_df          : X_test_with_dates (needs 'arrival_date' column)
+    cancel_probs    : array of booking-level cancel probabilities
+    capacity_map    : {(hotel, room_type): capacity}
+    hotel, arrival_date, room_type : group identifiers
+    n_total         : total bookings to simulate (slider value)
+
+    Returns
+    -------
+    dict  –  output of OverbookingOptimizer.compute_showup_distribution
+    """
+    import numpy as np
+    import pandas as pd
+    from .optimiser import OverbookingOptimizer
+
+    df = raw_df.copy()
+    df["cancel_prob"] = np.asarray(cancel_probs)
+
+    target_date = pd.to_datetime(arrival_date)
+
+    filtered = df[
+        (df["hotel"] == hotel)
+        & (df["arrival_date"] == target_date)
+        & (df["assigned_room_type"] == room_type)
+    ]
+
+    if filtered.empty:
+        return {"error": "No bookings found for this selection."}
+
+    group_probs = filtered["cancel_prob"].values
+    capacity = capacity_map.get((hotel, room_type), len(group_probs))
+
+    optimizer = OverbookingOptimizer()
+    return optimizer.compute_showup_distribution(
+        cancel_probs=group_probs,
+        n_total=n_total,
+        capacity=int(capacity),
+    )
