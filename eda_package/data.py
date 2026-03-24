@@ -272,7 +272,13 @@ class DataManager:
             stratify=stratify
         )
 
-        return X_train, X_test, y_train, y_test
+        X_full_data_set, X_dashboard, y_full_data_set, y_dashboard = self.split_dashboard_data(
+            df=self._clean_df,
+            target_col=target_col
+        )
+
+        # return X_train, X_test, y_train, y_test
+        return X_full_data_set, X_dashboard, y_full_data_set, y_dashboard
 
     def row_to_api_json(self, row_index: int = 0) -> str:
         """
