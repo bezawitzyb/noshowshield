@@ -56,10 +56,10 @@ def prepare_optimisation_artifacts_once() -> None:
     print("Preparing optimisation artifacts...")
 
     X_train, X_test, y_train, y_test = (
-        data_manager.X_train, data_manager.X_test,
-        data_manager.y_train, data_manager.y_test,
+        data_manager._X_full_data_set, data_manager._X_dashboard,
+        data_manager._y_full_data_set, data_manager._y_dashboard,
     )
-    print("Data prepared")
+    print(f"Data prepared — dashboard: {len(X_test)} rows, training: {len(X_train)} rows")
 
     X_train_fe = feature_engineer.engineer_features(X_train.copy())
     X_test_fe = feature_engineer.engineer_features(X_test.copy())
@@ -112,8 +112,8 @@ def prepare_explainability_artifacts_once() -> None:
     Prepare SHAP background data once and build the explainer.
     """
     X_train, X_test, y_train, y_test = (
-        data_manager.X_train, data_manager.X_test,
-        data_manager.y_train, data_manager.y_test,
+        data_manager._X_full_data_set, data_manager._X_dashboard,
+        data_manager._y_full_data_set, data_manager._y_dashboard,
     )
 
     X_train_fe = feature_engineer.engineer_features(X_train.copy())
@@ -386,8 +386,8 @@ def random_booking() -> dict:
         "required_car_parking_spaces", "total_of_special_requests",
     ]
 
-    X_test = data_manager.X_test
-    y_test = data_manager.y_test
+    X_test = data_manager._X_dashboard
+    y_test = data_manager._y_dashboard
 
     idx = rng.randint(0, len(X_test) - 1)
     row = X_test.iloc[idx]
@@ -424,8 +424,8 @@ def top_bookings(n: int = 3) -> dict:
     ]
 
     cancel_probs = optimisation_cache["cancel_probs"]
-    X_test = data_manager.X_test
-    y_test = data_manager.y_test
+    X_test = data_manager._X_dashboard
+    y_test = data_manager._y_dashboard
 
     top_indices = cancel_probs.argsort()[::-1][:n]
 
