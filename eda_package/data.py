@@ -88,7 +88,6 @@ class DataManager:
             self._X_dashboard = feature_engineer.engineer_features(self._X_dashboard)
 
 
-
     def load_raw_data(self, force_reload: bool = False) -> pd.DataFrame:
         """
         Load the raw hotel bookings CSV.
@@ -133,7 +132,7 @@ class DataManager:
         self,
         df: pd.DataFrame,
         limit: Optional[int] = None,
-        drop_country_column: bool = True
+        drop_country_column: bool = False
     ) -> pd.DataFrame:
         """
         Group countries with fewer than `limit` entries into 'Other'.
@@ -156,6 +155,7 @@ class DataManager:
         )
 
         if drop_country_column:
+            #print('dropping country')
             grouped_df = grouped_df.drop(columns='country')
 
         return grouped_df
@@ -262,6 +262,8 @@ class DataManager:
         3. group countries
         4. split into train/test
         """
+
+
         df = self.prepare_dataset()
 
         X_train, X_test, y_train, y_test = self.split_data(

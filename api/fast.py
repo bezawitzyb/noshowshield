@@ -30,10 +30,15 @@ def train_artifacts_once():
     """
     Train preprocessor + model once if they do not exist yet.
     """
+#    X_train, X_test, y_train, y_test = (
+#        data_manager.X_train, data_manager.X_test,
+#        data_manager.y_train, data_manager.y_test,
+#    )
     X_train, X_test, y_train, y_test = (
-        data_manager.X_train, data_manager.X_test,
-        data_manager.y_train, data_manager.y_test,
+        data_manager._X_full_data_set, data_manager._X_dashboard,
+        data_manager._y_full_data_set, data_manager._y_dashboard,
     )
+
 
     X_train = feature_engineer.engineer_features(X_train)
     X_test = feature_engineer.engineer_features(X_test)
