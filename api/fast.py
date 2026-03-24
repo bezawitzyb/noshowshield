@@ -492,6 +492,89 @@ def get_top_cancellations(
     }
 
 
+@app.get("/group-probs")
+def get_group_probs(
+    hotel: str,
+    arrival_date: str,
+    room_type: str,
+) -> dict:
+    """
+    Return the individual cancellation probabilities and capacity
+    for a specific (hotel, date, room-type) group.
+    """
+    if "X_test_with_dates" not in optimisation_cache:
+        prepare_optimisation_artifacts_once()
+
+    df = optimisation_cache["X_test_with_dates"].copy()
+    df["cancel_prob"] = optimisation_cache["cancel_probs"]
+
+    target_date = pd.to_datetime(arrival_date)
+
+    filtered = df[
+        (df["hotel"] == hotel)
+        & (df["arrival_date"] == target_date)
+        & (df["assigned_room_type"] == room_type)
+    ]
+
+    if filtered.empty:
+        return {"error": "No bookings found for this selection."}
+
+    cancel_probs = filtered["cancel_prob"].tolist()
+    capacity = optimisation_cache["capacity_map"].get(
+        (hotel, room_type),
+        len(cancel_probs),
+    )
+
+    return {
+        "cancel_probs": cancel_probs,
+        "n_current": len(cancel_probs),
+        "capacity": int(capacity),
+    }
+
+
+@app.get("/distribution")
+def get_distribution(
+    hotel: str,
+    arrival_date: str,
+    room_type: str,
+    n_total: int,
+) -> dict:
+    """
+    Compute the full Poisson-Binomial show-up distribution for
+    a given (hotel, date, room-type) group at a specified total
+    booking level.
+    """
+    if "X_test_with_dates" not in optimisation_cache:
+        prepare_optimisation_artifacts_once()
+
+    df = optimisation_cache["X_test_with_dates"].copy()
+    df["cancel_prob"] = optimisation_cache["cancel_probs"]
+
+    target_date = pd.to_datetime(arrival_date)
+
+    filtered = df[
+        (df["hotel"] == hotel)
+        & (df["arrival_date"] == target_date)
+        & (df["assigned_room_type"] == room_type)
+    ]
+
+    if filtered.empty:
+        return {"error": "No bookings found for this selection."}
+
+    cancel_probs = filtered["cancel_prob"].values
+    capacity = optimisation_cache["capacity_map"].get(
+        (hotel, room_type),
+        len(cancel_probs),
+    )
+
+    optimizer = OverbookingOptimizer()
+    return optimizer.compute_showup_distribution(
+        cancel_probs=cancel_probs,
+        n_total=n_total,
+        capacity=int(capacity),
+    )
+
+
 @app.get("/explain/available-dates")
 def explain_available_dates() -> dict:
     X_test = explainability_cache["X_test"].copy()

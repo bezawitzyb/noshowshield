@@ -135,6 +135,77 @@ class OverbookingOptimizer:
         return mean, var
 
     # ------------------------------------------------------------------
+    # show-up distribution for a given total-bookings level
+    # ------------------------------------------------------------------
+
+    def compute_showup_distribution(
+        self,
+        cancel_probs: Sequence[float],
+        n_total: int,
+        capacity: int,
+    ) -> dict:
+        """
+        Compute the full Poisson-Binomial show-up distribution for
+        *n_total* bookings.
+
+        For the first ``len(cancel_probs)`` bookings the individual
+        probabilities are used.  Any extras beyond that use the group
+        mean cancellation probability.
+
+        Returns
+        -------
+        dict with keys:
+            pmf, mean_showups, std_showups, n_total, n_current,
+            capacity, relocation_probability, individual_show_probs
+        """
+        cancel_probs = np.asarray(cancel_probs, dtype=np.float64)
+        n_current = len(cancel_probs)
+
+        if n_total == 0:
+            return {
+                "pmf": [1.0],
+                "mean_showups": 0.0,
+                "std_showups": 0.0,
+                "n_total": 0,
+                "n_current": n_current,
+                "capacity": capacity,
+                "relocation_probability": 0.0,
+                "individual_show_probs": [],
+            }
+
+        if n_total <= n_current:
+            selected_cancel = cancel_probs[:n_total]
+        else:
+            mean_cancel = cancel_probs.mean()
+            extra = n_total - n_current
+            selected_cancel = np.concatenate([
+                cancel_probs,
+                np.full(extra, mean_cancel),
+            ])
+
+        show_probs = 1.0 - selected_cancel
+        show_pmf = self.poisson_binomial_pmf(show_probs)
+
+        mean_showups = float(show_probs.sum())
+        std_showups = float(np.sqrt((show_probs * (1 - show_probs)).sum()))
+
+        if capacity + 1 <= n_total:
+            relocation_prob = float(show_pmf[capacity + 1:].sum())
+        else:
+            relocation_prob = 0.0
+
+        return {
+            "pmf": show_pmf.tolist(),
+            "mean_showups": round(mean_showups, 2),
+            "std_showups": round(std_showups, 2),
+            "n_total": n_total,
+            "n_current": n_current,
+            "capacity": capacity,
+            "relocation_probability": round(relocation_prob, 6),
+            "individual_show_probs": show_probs.round(4).tolist(),
+        }
+
+    # ------------------------------------------------------------------
     # single-group optimisation
     # ------------------------------------------------------------------
 
