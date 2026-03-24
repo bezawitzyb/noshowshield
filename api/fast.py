@@ -30,7 +30,10 @@ def train_artifacts_once():
     """
     Train preprocessor + model once if they do not exist yet.
     """
-    X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
+    X_train, X_test, y_train, y_test = (
+        data_manager.X_train, data_manager.X_test,
+        data_manager.y_train, data_manager.y_test,
+    )
 
     X_train = feature_engineer.engineer_features(X_train)
     X_test = feature_engineer.engineer_features(X_test)
@@ -47,7 +50,10 @@ def train_artifacts_once():
 def prepare_optimisation_artifacts_once() -> None:
     print("Preparing optimisation artifacts...")
 
-    X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
+    X_train, X_test, y_train, y_test = (
+        data_manager.X_train, data_manager.X_test,
+        data_manager.y_train, data_manager.y_test,
+    )
     print("Data prepared")
 
     X_train_fe = feature_engineer.engineer_features(X_train.copy())
@@ -100,7 +106,10 @@ def prepare_explainability_artifacts_once() -> None:
     """
     Prepare SHAP background data once and build the explainer.
     """
-    X_train, X_test, y_train, y_test = data_manager.prepare_train_test_data()
+    X_train, X_test, y_train, y_test = (
+        data_manager.X_train, data_manager.X_test,
+        data_manager.y_train, data_manager.y_test,
+    )
 
     X_train_fe = feature_engineer.engineer_features(X_train.copy())
     X_test_fe = feature_engineer.engineer_features(X_test.copy())
@@ -230,19 +239,22 @@ def optimise(
 
     print(f"Cache check: {time.time() - start:.2f}s")
 
-    optimizer = OverbookingOptimizer(
-        relocation_cost=relocation_cost,
-        max_risk=max_risk,
-        max_extra_sweep=max_extra_sweep,
-    )
+    rec_cache_key = (relocation_cost, max_risk, max_extra_sweep)
+    if rec_cache_key not in optimisation_cache:
+        optimizer = OverbookingOptimizer(
+            relocation_cost=relocation_cost,
+            max_risk=max_risk,
+            max_extra_sweep=max_extra_sweep,
+        )
+        optimisation_cache[rec_cache_key] = optimizer.aggregate_and_recommend(
+            raw_df=optimisation_cache["X_test_with_dates"],
+            cancel_probs=optimisation_cache["cancel_probs"],
+            capacity_map=optimisation_cache["capacity_map"],
+        )
 
     t1 = time.time()
 
-    recommendations = optimizer.aggregate_and_recommend(
-        raw_df=optimisation_cache["X_test_with_dates"],
-        cancel_probs=optimisation_cache["cancel_probs"],
-        capacity_map=optimisation_cache["capacity_map"],
-    )
+    recommendations = optimisation_cache[rec_cache_key]
 
     if hotel is not None:
         recommendations = recommendations[
