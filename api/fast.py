@@ -261,6 +261,12 @@ def optimise(
 
     recommendations = optimisation_cache[rec_cache_key]
 
+    arrival = pd.to_datetime(recommendations["arrival_date"])
+    period_mask = pd.Series(False, index=recommendations.index)
+    for period_start, period_end in FRONT_END_PERIODS:
+        period_mask |= (arrival >= period_start) & (arrival <= period_end)
+    recommendations = recommendations[period_mask]
+
     if hotel is not None:
         recommendations = recommendations[
             recommendations["hotel"] == hotel
@@ -593,6 +599,11 @@ def explain_available_dates() -> dict:
         format="%d %B %Y",
         errors="coerce"
     )
+
+    mask = pd.Series(False, index=X_test.index)
+    for start, end in FRONT_END_PERIODS:
+        mask |= (X_test["arrival_date"] >= start) & (X_test["arrival_date"] <= end)
+    X_test = X_test[mask]
 
     counts = (
         X_test["arrival_date"]
