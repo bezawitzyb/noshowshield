@@ -59,7 +59,7 @@ class ExplainerManager:
         """
         Collapse transformed feature names into user-friendly business feature groups.
         """
-        for prefix in ["cat_onehot__", "cat__", "num__", "ord__", "bin__", "remainder__"]:
+        for prefix in ["cat_onehot__", "cat_ordinal__", "cat__", "num__", "ord__", "bin__", "remainder__"]:
             if name.startswith(prefix):
                 name = name[len(prefix):]
 
