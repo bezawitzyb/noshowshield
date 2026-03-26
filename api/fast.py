@@ -474,8 +474,23 @@ def get_top_cancellations(
     if "X_test_with_dates" not in optimisation_cache:
         prepare_optimisation_artifacts_once()
 
+    booking_fields = [
+        "hotel", "lead_time", "arrival_date_year", "arrival_date_month",
+        "arrival_date_week_number", "arrival_date_day_of_month",
+        "stays_in_weekend_nights", "stays_in_week_nights", "adults",
+        "children", "babies", "meal", "country", "market_segment",
+        "distribution_channel", "is_repeated_guest", "previous_cancellations",
+        "previous_bookings_not_canceled", "reserved_room_type", "assigned_room_type",
+        "booking_changes", "deposit_type", "agent", "company",
+        "days_in_waiting_list", "customer_type", "adr",
+        "required_car_parking_spaces", "total_of_special_requests",
+    ]
+
     df = optimisation_cache["X_test_with_dates"].copy()
     df["cancel_prob"] = optimisation_cache["cancel_probs"]
+
+    X_test = data_manager._X_dashboard
+    y_test = data_manager._y_dashboard
 
     # Convert arrival_date string to datetime for comparison
     target_date = pd.to_datetime(arrival_date)
@@ -498,8 +513,45 @@ def get_top_cancellations(
         "cancel_prob"
     ]
 
+    results = []
+    for rank, (orig_idx, r) in enumerate(top_3.iterrows(), start=1):
+        prob = float(r["cancel_prob"])
+
+        # Build full booking object from the original test set row
+        row = X_test.loc[orig_idx]
+        actual = int(y_test.loc[orig_idx])
+
+        booking = {f: row[f] for f in booking_fields if f in row.index}
+        booking = {
+            k: (None if isinstance(v, float) and pd.isna(v) else v.item() if hasattr(v, "item") else v)
+            for k, v in booking.items()
+        }
+
+        label = (
+            f"#{rank} — {booking.get('hotel', 'N/A')} | "
+            f"Lead: {booking.get('lead_time', '?')}d | "
+            f"ADR: {booking.get('adr', 0):.0f} | "
+            f"{prob * 100:.1f}% cancel risk"
+        )
+
+        # Include both display columns and full booking data
+        display_data = {col: r[col] for col in cols_to_show if col in r.index}
+        display_data = {
+            k: (v.item() if hasattr(v, "item") else v)
+            for k, v in display_data.items()
+        }
+
+        results.append({
+            **display_data,
+            "rank": rank,
+            "label": label,
+            "cancel_prob": prob,
+            "actual_outcome": actual,
+            "booking": booking,
+        })
+
     return {
-        "top_3": top_3[cols_to_show].to_dict("records")
+        "top_3": results
     }
 
 
